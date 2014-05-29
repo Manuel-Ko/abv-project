@@ -12,6 +12,7 @@ int testval = 0;
 int edgeThresh = 1;
 int lowThreshold;
 const int MAX_lowThreshold = 100;
+const int MAX_ratio = 100;
 int ratio = 3;
 int kernel_size = 3;
 char* name_edgeWindow = "Edges";
@@ -33,7 +34,7 @@ void CannyThreshold(int, void*)
   blur( image_gray, detected_edges, Size(3,3) );
 
   /// Canny detector
-  Canny( detected_edges, detected_edges, lowThreshold, lowThreshold*ratio, kernel_size );
+  Canny( detected_edges, detected_edges, lowThreshold, ratio, kernel_size );
 
   cvtColor(detected_edges,detected_edges,CV_GRAY2BGR);
   bitwise_not(detected_edges,tmp);
@@ -68,6 +69,7 @@ int main(int argc, char** argv )
 
 	namedWindow(name_edgeWindow, WINDOW_NORMAL );
 	createTrackbar("myTrackbar",name_edgeWindow,&lowThreshold,MAX_lowThreshold,CannyThreshold);
+	createTrackbar("myTrackbar2",name_edgeWindow,&ratio,MAX_ratio,CannyThreshold);
 
 	CannyThreshold(0,0);
 	//vector<Vec3f> circles;
@@ -83,10 +85,10 @@ int main(int argc, char** argv )
  //     circle( image_gray, center, radius, Scalar(0,0,255), 3, 8, 0 );
  //  }
 
-	//
+	//namedWindow("Display Image", WINDOW_AUTOSIZE);
  //   imshow("Display Image", image_gray);
 
-    waitKey(0);
+    waitKey();
 
     return 0;
 }
