@@ -1,5 +1,6 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
+#include <stdint.h>
 #include "imageloader.h"
 #include "imageprocessor.h"
 
@@ -18,6 +19,21 @@ void drawImageNr(cv::Mat p_image, cv::Point p_pos = cv::Point(30,30), int p_widt
     std::string text = cv::format("%d/%d",imageLoader.getIndex(),imageLoader.getMaxIndex());
     cv::rectangle(p_image,p_pos,cv::Point(p_pos.x + p_width,130),cv::Scalar(255,255,255),-1);
     cv::putText(p_image,text,cv::Point(p_pos.x + 10,110),CV_FONT_HERSHEY_DUPLEX,2,cv::Scalar(0,0,0),5);
+}
+
+void drawDebug()
+{
+    std::vector<cv::Mat> debugImages = std::vector<cv::Mat>();
+    imageProcesor.debugOutput_Sobel(debugImages);
+    imageProcesor.debugOutput_TemplateMatch(debugImages);
+    for(uint8_t i = 0; i < debugImages.size(); ++i)
+    {
+        std::string windowName = cv::format( "Debugimage%d", i );
+        cv::namedWindow( windowName, CV_WINDOW_KEEPRATIO );
+        cv::resizeWindow( windowName, 1032, 580 );
+        drawImageNr(debugImages[i]);
+        cv::imshow(windowName,debugImages[i]);
+    }
 }
 
 int main(int argc, char** argv )
@@ -58,7 +74,7 @@ int main(int argc, char** argv )
         imageProcesor.setImage(calc_image);
         //imageProcesor.processImage_Hough();
         imageProcesor.processImage_TemplateMatch();
-        imageProcesor.debugOutput_TemplateMatch();
+        drawDebug();
 
         cv::namedWindow(WINDOWNAME_FRAME, cv::WINDOW_NORMAL);
         cv::resizeWindow(WINDOWNAME_FRAME, 1032, 580);

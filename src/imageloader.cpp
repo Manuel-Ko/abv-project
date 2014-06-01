@@ -27,7 +27,7 @@ void ImageLoader::lookInFolder()
 
         if( image.empty() )
         {
-            std::cout << "End of Sequence - found " << count << " files" << std::endl;
+            std::cout << "End of Sequence - found " << count + 1 << " files" << std::endl;
             break;
         }
         ++count;
