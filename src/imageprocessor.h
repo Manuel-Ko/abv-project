@@ -4,6 +4,7 @@
 #define DEBUGWIN_WIDTH 1032
 #define DEBUGWIN_HEIGHT 580
 
+#include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -39,7 +40,9 @@ private:
     std::vector<cv::Point> matchPositions;
     cv::Point matchLoc;
     cv::Mat result;
+    // debug templ matching
 	cv::Mat result_debug;
+    cv::Size tmplSize;
 };
 
 #endif // IMAGEPROCESSOR_H

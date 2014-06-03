@@ -55,44 +55,83 @@ void ImageProcessor::processImage_TemplateMatch()
 {
 	matchPositions.clear();
     cv::Mat templ = cv::imread("template.jpg",0);
+    cv::Mat templ2;
     processImage_Sobel();
-    /// Create the result matrix
-    int result_cols =  grad.cols - templ.cols + 1;
-    int result_rows = grad.rows - templ.rows + 1;
+    double currMaxMatch = 0;
+    size_t currBestScaleLevel = 0;
+    std::vector<cv::Mat> resultScalePyr = std::vector<cv::Mat>();
 
-    result.create( result_cols, result_rows, CV_32FC1 );
+    const float MIN_SIZE = 1.0f;
+    const float STEP_SIZE = 0.05f;
 
-    cv::matchTemplate( grad, templ, result, CV_TM_CCOEFF_NORMED );
-    cv::normalize( result, result, 0, 1, cv::NORM_MINMAX, -1, cv::Mat() );
 
-	//######	for debugging	######
-	result_debug = result.clone();
+    //cv::namedWindow("sizeDebug",CV_WINDOW_KEEPRATIO);
+    size_t scaleLevel = 0;
+    const size_t MAX_SCALE_LEVEL = unsigned int((1-MIN_SIZE)/(float)STEP_SIZE)-1;
+    for(float scale = 1.00f; scale >= MIN_SIZE; scale -= STEP_SIZE)
+    {
+        // Resize the template to all sizes between 1 and MIN_SIZE in steps of size STEP_SIZE
+        cv::resize(templ,templ2,cv::Size(0,0),scale,scale);
+        //cv::imshow("sizeDebug",templ);
 
-    cv::threshold(result, result, 0.55, 1., CV_THRESH_TOZERO);
+        int result_cols =  grad.cols - templ2.cols + 1;
+        int result_rows = grad.rows - templ2.rows + 1;
 
-//    /// Localizing the best match with minMaxLoc
-//    double minVal; double maxVal; cv::Point minLoc; cv::Point maxLoc;
+        //result.create( result_cols, result_rows, CV_32FC1 );
 
-//    cv::minMaxLoc( result, &minVal, &maxVal, &minLoc, &maxLoc, cv::Mat() );
-//    matchLoc = maxLoc;
+        // create new Scale level for match results
+        // TODO: use only 2 Mats and hold the "better" to optimize memory consumption
+        resultScalePyr.push_back(cv::Mat(result_rows, result_cols,CV_32FC1));
 
+        cv::matchTemplate( grad, templ2, resultScalePyr.back(), CV_TM_CCOEFF_NORMED );
+
+        // find the scale with the best match
+        double minval, maxval;
+        cv::Point minloc, maxloc;
+        cv::minMaxLoc(resultScalePyr.back(), &minval, &maxval, &minloc, &maxloc);
+        if(maxval > currMaxMatch)
+        {
+            currMaxMatch =  maxval;
+            currBestScaleLevel = scaleLevel;
+            tmplSize = cv::Size(templ2.cols, templ2.rows);
+        }
+
+        std::cout << "Matching at level: "  << scaleLevel << "/" << MAX_SCALE_LEVEL << std::endl;
+
+        ++scaleLevel;
+    }
+    std::cout << "Matched all scales." << std::endl;
+    std::cout << "Best match at: " << currBestScaleLevel << std::endl;
+   // cv::resize(templ,templ2,cv::Size(0,0),MIN_SIZE,MIN_SIZE);
+
+    cv::normalize( resultScalePyr[currBestScaleLevel], resultScalePyr[currBestScaleLevel], 0, 1, cv::NORM_MINMAX, -1, cv::Mat() );
+
+    //######	for debugging	#####
+    result = resultScalePyr[currBestScaleLevel].clone();
+
+    //cv::threshold(resultScalePyr[currBestScaleLevel], resultScalePyr[currBestScaleLevel], 0.55, 1., CV_THRESH_TOZERO);
 
 
     while (true)
     {
+        // ###  $Parameter threshold
         double minval, maxval, threshold = 0.55;
         cv::Point minloc, maxloc;
-        cv::minMaxLoc(result, &minval, &maxval, &minloc, &maxloc);
+        cv::minMaxLoc(resultScalePyr[currBestScaleLevel], &minval, &maxval, &minloc, &maxloc);
 
         if (maxval >= threshold)
         {
             matchPositions.push_back(maxloc);
             //cv::floodFill(result, maxloc, cv::Scalar(0), 0, cv::Scalar(.1), cv::Scalar(1.));
-			cv::rectangle(result, cv::Point(maxloc.x - templ.cols/2, maxloc.y - templ.rows/2), cv::Point(maxloc.x + templ.cols/2, maxloc.y + templ.rows/2), cv::Scalar(0,0,0),-1);
+            cv::rectangle(resultScalePyr[currBestScaleLevel],
+                          cv::Point(maxloc.x - tmplSize.width/2, maxloc.y - tmplSize.height/2),
+                          cv::Point(maxloc.x + tmplSize.width/2, maxloc.y + tmplSize.height/2),
+                          cv::Scalar(0,0,0),-1);
         }
         else
             break;
     }
+    result_debug = resultScalePyr[currBestScaleLevel];
 
 
     m_imageProcessed = true;
@@ -156,20 +195,21 @@ void ImageProcessor::debugOutput_TemplateMatch(std::vector<cv::Mat> &p_out)
     {
         return;
     }
-    cv::Mat templ = cv::imread("template.jpg");
+    //cv::Mat templ = cv::imread("template.jpg");
 
     cv::Mat displ_image = m_calcImage.clone();
 //    cv::Mat result_thresh;
 //    cv::threshold(result, result_thresh, 0.55, 1., CV_THRESH_TOZERO);
     for(unsigned int i = 0; i < matchPositions.size(); ++i)
     {
-        cv::rectangle( displ_image, matchPositions[i], cv::Point( matchPositions[i].x + templ.cols , matchPositions[i].y + templ.rows ), cv::Scalar::all(0), 5, 8, 0 );
-        cv::circle(displ_image,cv::Point(matchPositions[i].x + templ.cols/2,matchPositions[i].y + templ.rows/2),20,cv::Scalar(0,0,255),-1);
+        cv::rectangle( displ_image, matchPositions[i], cv::Point( matchPositions[i].x + tmplSize.width , matchPositions[i].y + tmplSize.height ), cv::Scalar::all(0), 5, 8, 0 );
+        cv::circle(displ_image,cv::Point(matchPositions[i].x + tmplSize.width/2, matchPositions[i].y + tmplSize.height/2),20,cv::Scalar(0,0,255),-1);
     }
 
 
     p_out.push_back(displ_image);
 	p_out.push_back(result_debug);
+    p_out.push_back(result);
 //    p_out.push_back(result_thresh);
 
 
