@@ -16,7 +16,8 @@ ImageProcessor::ImageProcessor() :
 //#################
 void ImageProcessor::setImage(cv::Mat p_image)
 {
-    m_calcImage = p_image;
+    //m_calcImage = p_image;
+    p_image.convertTo(m_calcImage, CV_8U);
     m_imageProcessed = false;
 }
 
@@ -54,24 +55,29 @@ void ImageProcessor::processImage_Sobel()
 void ImageProcessor::processImage_TemplateMatch()
 {
 	matchPositions.clear();
-    cv::Mat templ = cv::imread("template.jpg",0);
+    cv::Mat templ = cv::imread("template_color.jpg");
     cv::Mat templ2;
     processImage_Sobel();
     double currMaxMatch = 0;
     size_t currBestScaleLevel = 0;
     std::vector<cv::Mat> resultScalePyr = std::vector<cv::Mat>();
 
-    const float MIN_SIZE = 1.0f;
-    const float STEP_SIZE = 0.05f;
+    const int MIN_SIZE = 40;
+    const int STEP_SIZE = 5;
 
 
     //cv::namedWindow("sizeDebug",CV_WINDOW_KEEPRATIO);
     size_t scaleLevel = 0;
-    const size_t MAX_SCALE_LEVEL = unsigned int((1-MIN_SIZE)/(float)STEP_SIZE)-1;
-    for(float scale = 1.00f; scale >= MIN_SIZE; scale -= STEP_SIZE)
+    const size_t MAX_SCALE_LEVEL = unsigned int((100-MIN_SIZE)/(float)STEP_SIZE);
+    for(int scale = 100; scale >= MIN_SIZE; scale -= STEP_SIZE)
     {
+        // show progresss
+        std::cout << "Matching at level: "  << scaleLevel << "/" << MAX_SCALE_LEVEL << std::endl;
+
+
+
         // Resize the template to all sizes between 1 and MIN_SIZE in steps of size STEP_SIZE
-        cv::resize(templ,templ2,cv::Size(0,0),scale,scale);
+        cv::resize(templ,templ2,cv::Size(0,0),scale/100.0f,scale/100.0f);
         //cv::imshow("sizeDebug",templ);
 
         int result_cols =  grad.cols - templ2.cols + 1;
@@ -83,7 +89,12 @@ void ImageProcessor::processImage_TemplateMatch()
         // TODO: use only 2 Mats and hold the "better" to optimize memory consumption
         resultScalePyr.push_back(cv::Mat(result_rows, result_cols,CV_32FC1));
 
-        cv::matchTemplate( grad, templ2, resultScalePyr.back(), CV_TM_CCOEFF_NORMED );
+
+        int lolo = m_calcImage.type();
+        int foo = templ2.type();
+        CV_32F;
+        CV_8U;
+        cv::matchTemplate( m_calcImage, templ2, resultScalePyr.back(), CV_TM_CCOEFF_NORMED );
 
         // find the scale with the best match
         double minval, maxval;
@@ -95,8 +106,6 @@ void ImageProcessor::processImage_TemplateMatch()
             currBestScaleLevel = scaleLevel;
             tmplSize = cv::Size(templ2.cols, templ2.rows);
         }
-
-        std::cout << "Matching at level: "  << scaleLevel << "/" << MAX_SCALE_LEVEL << std::endl;
 
         ++scaleLevel;
     }

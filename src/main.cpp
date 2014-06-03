@@ -23,6 +23,8 @@ void drawImageNr(cv::Mat p_image, cv::Point p_pos = cv::Point(30,30), int p_widt
 
 void drawDebug()
 {
+    const float RESIZE = 0.3;
+
     std::vector<cv::Mat> debugImages = std::vector<cv::Mat>();
     imageProcesor.debugOutput_Sobel(debugImages);
     imageProcesor.debugOutput_TemplateMatch(debugImages);
@@ -30,7 +32,7 @@ void drawDebug()
     {
         std::string windowName = cv::format( "Debugimage%d", i );
         cv::namedWindow( windowName, CV_WINDOW_KEEPRATIO );
-        cv::resizeWindow( windowName, 1032, 580 );
+        cv::resizeWindow( windowName, int(RESIZE*debugImages[i].cols), int(RESIZE*debugImages[i].rows) );
         drawImageNr(debugImages[i]);
         cv::imshow(windowName,debugImages[i]);
     }
