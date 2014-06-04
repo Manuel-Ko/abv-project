@@ -1,6 +1,7 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <stdint.h>
+#include <time.h>
 #include "imageloader.h"
 #include "imageprocessor.h"
 
@@ -23,7 +24,7 @@ void drawImageNr(cv::Mat p_image, cv::Point p_pos = cv::Point(30,30), int p_widt
 
 void drawDebug()
 {
-    const float RESIZE = 0.3;
+    const float RESIZE = 0.3f;
 
     std::vector<cv::Mat> debugImages = std::vector<cv::Mat>();
     imageProcesor.debugOutput_Sobel(debugImages);
@@ -73,9 +74,16 @@ int main(int argc, char** argv )
             return -1;
         }
 
+        ImageProcessor::TemplateType matchOn = ImageProcessor::Color;
         imageProcesor.setImage(calc_image);
         //imageProcesor.processImage_Hough();
-        imageProcesor.processImage_TemplateMatch();
+        //imageProcesor.processImage_Sobel();
+
+        clock_t templStart = clock();
+        imageProcesor.processImage_TemplateMatch(matchOn);
+        double templElapsed = ((double)(clock() - templStart)) / (double)CLOCKS_PER_SEC;
+        std::cout << "Template Matching took " << templElapsed << "seconds." << std::endl;
+
         drawDebug();
 
         cv::namedWindow(WINDOWNAME_FRAME, cv::WINDOW_NORMAL);

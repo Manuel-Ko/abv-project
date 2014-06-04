@@ -3,7 +3,10 @@
 ImageProcessor::ImageProcessor() :
     m_calcImage(cv::Mat()),
     m_imageProcessed(false),
-    matchPositions(std::vector<cv::Point>())
+    m_matchPositions(std::vector<cv::Point>()),
+    m_houghDebugAvailable(false),
+    m_sobelDebugAvailable(false),
+    m_templMatchDebugAvailable(false)
 {
 }
 
@@ -18,7 +21,9 @@ void ImageProcessor::setImage(cv::Mat p_image)
 {
     //m_calcImage = p_image;
     p_image.convertTo(m_calcImage, CV_8U);
-    m_imageProcessed = false;
+    m_houghDebugAvailable = false;
+    m_sobelDebugAvailable = false;
+    m_templMatchDebugAvailable = false;
 }
 
 void ImageProcessor::processImage_Hough()
@@ -27,7 +32,8 @@ void ImageProcessor::processImage_Hough()
     cv::Mat image_gray;
     cv::cvtColor( m_calcImage, image_gray, CV_BGR2GRAY );
     cv::HoughCircles( image_gray,m_circles, CV_HOUGH_GRADIENT, 1, image_gray.rows/8, 250, 100, 250 );
-    m_imageProcessed = true;
+
+    m_houghDebugAvailable = true;
 }
 
 void ImageProcessor::processImage_Sobel()
@@ -47,54 +53,67 @@ void ImageProcessor::processImage_Sobel()
     cv::convertScaleAbs( grad_y, abs_grad_y );
 
     /// Total Gradient (approximate)
-    cv::addWeighted( abs_grad_x, 0.5, abs_grad_y, 0.5, 0, grad );
+    cv::addWeighted( abs_grad_x, 0.5, abs_grad_y, 0.5, 0, m_sobel_result );
 
-    m_imageProcessed = true;
+    // save edge image
+    //cv::imwrite("template_sobel.jpg", grad);
+
+    m_sobelDebugAvailable = true;
 }
 
-void ImageProcessor::processImage_TemplateMatch()
+void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
 {
-	matchPositions.clear();
-    cv::Mat templ = cv::imread("template_color.jpg");
-    cv::Mat templ2;
-    processImage_Sobel();
+    // clear existing matchspaces
+    m_matchPositions.clear();
+
+    TemplateType matchOn = p_templType;
+    cv::Mat origTempl;
+    cv::Mat resizedTempl;
+    // the image on which the template should be looked for
+    cv::Mat matchOnImage;
+
+    // set templates and imgages in regard to matching type
+    switch(matchOn)
+    {
+    case Color:
+        origTempl = cv::imread("template_color.jpg");
+        matchOnImage = m_calcImage;
+        break;
+    case Sobel:
+        origTempl = cv::imread("template_sobel.jpg");
+        processImage_Sobel();
+        matchOnImage = m_sobel_result;
+        break;
+    }
+
+    // scale pyramid parameters
+    const int MIN_SIZE = 40;
+    const int STEP_SIZE = 5;
+    const size_t MAX_SCALE_LEVEL = unsigned int((100-MIN_SIZE)/(float)STEP_SIZE);
     double currMaxMatch = 0;
     size_t currBestScaleLevel = 0;
     std::vector<cv::Mat> resultScalePyr = std::vector<cv::Mat>();
-
-    const int MIN_SIZE = 40;
-    const int STEP_SIZE = 5;
-
-
-    //cv::namedWindow("sizeDebug",CV_WINDOW_KEEPRATIO);
     size_t scaleLevel = 0;
-    const size_t MAX_SCALE_LEVEL = unsigned int((100-MIN_SIZE)/(float)STEP_SIZE);
+
     for(int scale = 100; scale >= MIN_SIZE; scale -= STEP_SIZE)
     {
+        clock_t templStartTime = clock();
         // show progresss
         std::cout << "Matching at level: "  << scaleLevel << "/" << MAX_SCALE_LEVEL << std::endl;
 
-
-
         // Resize the template to all sizes between 1 and MIN_SIZE in steps of size STEP_SIZE
-        cv::resize(templ,templ2,cv::Size(0,0),scale/100.0f,scale/100.0f);
-        //cv::imshow("sizeDebug",templ);
+        cv::resize(origTempl,resizedTempl,cv::Size(0,0),scale/100.0f,scale/100.0f);
 
-        int result_cols =  grad.cols - templ2.cols + 1;
-        int result_rows = grad.rows - templ2.rows + 1;
+        int result_cols =  matchOnImage.cols - resizedTempl.cols + 1;
+        int result_rows = matchOnImage.rows - resizedTempl.rows + 1;
 
-        //result.create( result_cols, result_rows, CV_32FC1 );
 
         // create new Scale level for match results
         // TODO: use only 2 Mats and hold the "better" to optimize memory consumption
         resultScalePyr.push_back(cv::Mat(result_rows, result_cols,CV_32FC1));
 
 
-        int lolo = m_calcImage.type();
-        int foo = templ2.type();
-        CV_32F;
-        CV_8U;
-        cv::matchTemplate( m_calcImage, templ2, resultScalePyr.back(), CV_TM_CCOEFF_NORMED );
+        cv::matchTemplate( matchOnImage, resizedTempl, resultScalePyr.back(), CV_TM_CCOEFF_NORMED );
 
         // find the scale with the best match
         double minval, maxval;
@@ -104,8 +123,12 @@ void ImageProcessor::processImage_TemplateMatch()
         {
             currMaxMatch =  maxval;
             currBestScaleLevel = scaleLevel;
-            tmplSize = cv::Size(templ2.cols, templ2.rows);
+            m_bestTemplSize = cv::Size(resizedTempl.cols, resizedTempl.rows);
         }
+
+        double templElapsedTime = ((double)(clock() - templStartTime)) / (double)CLOCKS_PER_SEC;
+
+        std::cout << "Level took " << templElapsedTime << "seconds." << std::endl;
 
         ++scaleLevel;
     }
@@ -116,7 +139,7 @@ void ImageProcessor::processImage_TemplateMatch()
     cv::normalize( resultScalePyr[currBestScaleLevel], resultScalePyr[currBestScaleLevel], 0, 1, cv::NORM_MINMAX, -1, cv::Mat() );
 
     //######	for debugging	#####
-    result = resultScalePyr[currBestScaleLevel].clone();
+    m_bestMatchSpace_pure = resultScalePyr[currBestScaleLevel].clone();
 
     //cv::threshold(resultScalePyr[currBestScaleLevel], resultScalePyr[currBestScaleLevel], 0.55, 1., CV_THRESH_TOZERO);
 
@@ -130,20 +153,20 @@ void ImageProcessor::processImage_TemplateMatch()
 
         if (maxval >= threshold)
         {
-            matchPositions.push_back(maxloc);
+            m_matchPositions.push_back(maxloc);
             //cv::floodFill(result, maxloc, cv::Scalar(0), 0, cv::Scalar(.1), cv::Scalar(1.));
             cv::rectangle(resultScalePyr[currBestScaleLevel],
-                          cv::Point(maxloc.x - tmplSize.width/2, maxloc.y - tmplSize.height/2),
-                          cv::Point(maxloc.x + tmplSize.width/2, maxloc.y + tmplSize.height/2),
+                          cv::Point(maxloc.x - m_bestTemplSize.width/2, maxloc.y - m_bestTemplSize.height/2),
+                          cv::Point(maxloc.x + m_bestTemplSize.width/2, maxloc.y + m_bestTemplSize.height/2),
                           cv::Scalar(0,0,0),-1);
         }
         else
             break;
     }
-    result_debug = resultScalePyr[currBestScaleLevel];
+    m_bestMatchSpace_blacked = resultScalePyr[currBestScaleLevel];
 
 
-    m_imageProcessed = true;
+    m_templMatchDebugAvailable = true;
 }
 
 /// @brief returns the processed Image
@@ -161,10 +184,12 @@ cv::Mat ImageProcessor::getProcessedImage()
 
 void ImageProcessor::debugOutput_Hough(std::vector<cv::Mat> &p_out)
 {
-    if( !m_imageProcessed )
+    if( !m_houghDebugAvailable )
     {
         return;
     }
+
+    // draw found circles on original image
     cv::Mat debugOut = m_calcImage.clone();
     for( size_t i = 0; i < m_circles.size(); i++ )
     {
@@ -176,57 +201,42 @@ void ImageProcessor::debugOutput_Hough(std::vector<cv::Mat> &p_out)
       cv::circle( debugOut, center, radius, cv::Scalar(0,0,255), 3, 8, 0 );
     }
 
+    // ####     pass debug images   ####
     p_out.push_back(debugOut);
-
-//    cv::namedWindow("DebugWindow", cv::WINDOW_NORMAL);
-//    cv::resizeWindow("DebugWindow", DEBUGWIN_WIDTH, DEBUGWIN_HEIGHT );
-//    cv::imshow("DebugWindow", debugOut);
 }
 
 void ImageProcessor::debugOutput_Sobel(std::vector<cv::Mat> &p_out)
 {
-    if( !m_imageProcessed )
+    if( !m_sobelDebugAvailable )
     {
         return;
     }
 
-    p_out.push_back(grad);
-
-//    cv::namedWindow("DebugWindow_Sobel", cv::WINDOW_NORMAL);
-//    cv::resizeWindow("DebugWindow_Sobel", DEBUGWIN_WIDTH, DEBUGWIN_HEIGHT );
-//    cv::imshow("DebugWindow_Sobel", grad);
-    //cv::imwrite("output_sobel.jpg",grad);
+    // ####     pass debug images   ####
+    p_out.push_back(m_sobel_result);
 }
 
 void ImageProcessor::debugOutput_TemplateMatch(std::vector<cv::Mat> &p_out)
 {
-    if( !m_imageProcessed )
+    if( !m_templMatchDebugAvailable )
     {
         return;
     }
-    //cv::Mat templ = cv::imread("template.jpg");
 
+    // create image that shows positions of template on the orignal image
     cv::Mat displ_image = m_calcImage.clone();
-//    cv::Mat result_thresh;
-//    cv::threshold(result, result_thresh, 0.55, 1., CV_THRESH_TOZERO);
-    for(unsigned int i = 0; i < matchPositions.size(); ++i)
+    for(unsigned int i = 0; i < m_matchPositions.size(); ++i)
     {
-        cv::rectangle( displ_image, matchPositions[i], cv::Point( matchPositions[i].x + tmplSize.width , matchPositions[i].y + tmplSize.height ), cv::Scalar::all(0), 5, 8, 0 );
-        cv::circle(displ_image,cv::Point(matchPositions[i].x + tmplSize.width/2, matchPositions[i].y + tmplSize.height/2),20,cv::Scalar(0,0,255),-1);
+        cv::rectangle( displ_image, m_matchPositions[i], cv::Point( m_matchPositions[i].x + m_bestTemplSize.width , m_matchPositions[i].y + m_bestTemplSize.height ), cv::Scalar::all(0), 5, 8, 0 );
+        cv::circle(displ_image,cv::Point(m_matchPositions[i].x + m_bestTemplSize.width/2, m_matchPositions[i].y + m_bestTemplSize.height/2),20,cv::Scalar(0,0,255),-1);
     }
 
-
+    // ####     pass debug images   ####
     p_out.push_back(displ_image);
-	p_out.push_back(result_debug);
-    p_out.push_back(result);
+    // match space with blacked out rectangles
+    p_out.push_back(m_bestMatchSpace_blacked);
+    // pure match space
+    p_out.push_back(m_bestMatchSpace_pure);
 //    p_out.push_back(result_thresh);
 
-
-//    cv::namedWindow("DebugWindow", cv::WINDOW_NORMAL);
-//    cv::resizeWindow("DebugWindow", DEBUGWIN_WIDTH, DEBUGWIN_HEIGHT );
-//    cv::imshow("DebugWindow", displ_image);
-
-//    cv::namedWindow("matchingSpace", cv::WINDOW_NORMAL);
-//    cv::resizeWindow("matchingSpace", DEBUGWIN_WIDTH, DEBUGWIN_HEIGHT );
-//    cv::imshow("matchingSpace", result);
 }
