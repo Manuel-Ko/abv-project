@@ -2,6 +2,8 @@
 
 ImageProcessor::ImageProcessor() :
     m_calcImage(cv::Mat()),
+    m_calcImage_gray(cv::Mat()),
+    m_canny_result(cv::Mat()),
     m_imageProcessed(false),
     m_matchPositions(std::vector<cv::Point>()),
     m_houghDebugAvailable(false),
@@ -21,6 +23,8 @@ void ImageProcessor::setImage(cv::Mat p_image)
 {
     //m_calcImage = p_image;
     p_image.convertTo(m_calcImage, CV_8U);
+    cv::cvtColor( m_calcImage, m_calcImage_gray, CV_BGR2GRAY );
+
     m_houghDebugAvailable = false;
     m_sobelDebugAvailable = false;
     m_templMatchDebugAvailable = false;
@@ -61,6 +65,59 @@ void ImageProcessor::processImage_Sobel()
     m_sobelDebugAvailable = true;
 }
 
+void ImageProcessor::processImage_Canny(double lowThreshold, double highTreshold, int kernelSize )
+{
+    /// Reduce noise with a kernel 3x3
+    cv::blur( m_calcImage_gray, m_canny_result, cv::Size(3,3) );
+
+    int channels = 0;
+    int histSize = 255;
+    float histRange[] = {0,255};
+    const float* ranges[] = {histRange};
+    cv::Mat hist;
+    cv::calcHist(&m_canny_result,1,&channels,cv::Mat(),hist,1,&histSize,ranges);
+
+    int sum = 0;
+    int bin = 0;
+    while(sum < m_calcImage_gray.total()/2.0 && bin < 255)
+    {
+        sum += hist.at<float>(bin);
+        bin++;
+    }
+
+    cv::Scalar meanSc = cv::mean(m_calcImage_gray);
+    int mean = meanSc[0];
+
+    /// Canny detector
+    cv::Canny( m_canny_result, m_canny_result, 0.3* mean, 0.9*mean, kernelSize );
+
+    //## Debug
+    if(true)
+    {
+        cv::namedWindow("Canny", CV_WINDOW_KEEPRATIO);
+        cv::resizeWindow("Canny", (int)(m_canny_result.cols * 0.3), (int)(m_canny_result.rows * 0.3));
+        cv::imshow("Canny", m_canny_result);
+    }
+}
+
+void ImageProcessor::processImage_DistTrans()
+{
+    cv::Mat invCanny = cv::Mat(m_canny_result.rows, m_canny_result.cols, m_canny_result.type() );
+    cv::bitwise_not(m_canny_result,invCanny);
+
+    cv::distanceTransform(invCanny, m_distanceTrans, CV_DIST_L2, CV_DIST_MASK_PRECISE);
+
+    //## Debug
+    if(true)
+    {
+        cv::Mat dist;
+        cv::normalize(m_distanceTrans, dist, 0.0, 1.0, cv::NORM_MINMAX);
+        cv::namedWindow("distTrans", CV_WINDOW_KEEPRATIO);
+        cv::resizeWindow("distTrans", (int)(dist.cols * 0.3), (int)(dist.rows * 0.3));
+        cv::imshow("distTrans", dist);
+    }
+}
+
 void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
 {
     // clear existing matchspaces
@@ -80,7 +137,7 @@ void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
         matchOnImage = m_calcImage;
         break;
     case Sobel:
-        origTempl = cv::imread("template_sobel.jpg");
+        origTempl = cv::imread("template_sobel.jpg",0);
         processImage_Sobel();
         matchOnImage = m_sobel_result;
         break;
@@ -112,6 +169,10 @@ void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
         // TODO: use only 2 Mats and hold the "better" to optimize memory consumption
         resultScalePyr.push_back(cv::Mat(result_rows, result_cols,CV_32FC1));
 
+        int foo = matchOnImage.depth();
+        int bar = matchOnImage.type();
+        int lolo = resizedTempl.type();
+        CV_32F;
 
         cv::matchTemplate( matchOnImage, resizedTempl, resultScalePyr.back(), CV_TM_CCOEFF_NORMED );
 

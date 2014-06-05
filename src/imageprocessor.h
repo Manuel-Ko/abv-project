@@ -25,6 +25,8 @@ public:
     void setImage(cv::Mat p_image);
     void processImage_Hough();
     void processImage_Sobel();
+    void processImage_Canny(double lowThreshold, double highTreshold, int kernelSize);
+    void processImage_DistTrans();
     void processImage_TemplateMatch(TemplateType p_templType);
     cv::Mat getProcessedImage();
 
@@ -36,6 +38,7 @@ public:
     void debugOutput_TemplateMatch(std::vector<cv::Mat> &p_out);
 private:
     cv::Mat m_calcImage;
+    cv::Mat m_calcImage_gray;
     bool m_imageProcessed;
 
     //used for standard houghtransform
@@ -45,6 +48,12 @@ private:
     //used for sobel
     cv::Mat m_sobel_result;
     bool m_sobelDebugAvailable;
+
+    //used for Canny
+    cv::Mat m_canny_result;
+
+    //used for DistTransform
+    cv::Mat m_distanceTrans;
 
     //used for templateMatching
     std::vector<cv::Point> m_matchPositions;

@@ -79,12 +79,15 @@ int main(int argc, char** argv )
         //imageProcesor.processImage_Hough();
         //imageProcesor.processImage_Sobel();
 
-        clock_t templStart = clock();
-        imageProcesor.processImage_TemplateMatch(matchOn);
-        double templElapsed = ((double)(clock() - templStart)) / (double)CLOCKS_PER_SEC;
-        std::cout << "Template Matching took " << templElapsed << "seconds." << std::endl;
+        imageProcesor.processImage_Canny(60,10,3);
+        imageProcesor.processImage_DistTrans();
 
-        drawDebug();
+//        clock_t templStart = clock();
+//        imageProcesor.processImage_TemplateMatch(matchOn);
+//        double templElapsed = ((double)(clock() - templStart)) / (double)CLOCKS_PER_SEC;
+//        std::cout << "Template Matching took " << templElapsed << "seconds." << std::endl;
+
+//        drawDebug();
 
         cv::namedWindow(WINDOWNAME_FRAME, cv::WINDOW_NORMAL);
         cv::resizeWindow(WINDOWNAME_FRAME, 1032, 580);
