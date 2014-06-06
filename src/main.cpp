@@ -74,20 +74,17 @@ int main(int argc, char** argv )
             return -1;
         }
 
-        ImageProcessor::TemplateType matchOn = ImageProcessor::Color;
+        ImageProcessor::TemplateType matchOn = ImageProcessor::Sobel;
         imageProcesor.setImage(calc_image);
-        //imageProcesor.processImage_Hough();
-        //imageProcesor.processImage_Sobel();
 
-        imageProcesor.processImage_Canny(60,10,3);
-        imageProcesor.processImage_DistTrans();
 
-//        clock_t templStart = clock();
-//        imageProcesor.processImage_TemplateMatch(matchOn);
-//        double templElapsed = ((double)(clock() - templStart)) / (double)CLOCKS_PER_SEC;
-//        std::cout << "Template Matching took " << templElapsed << "seconds." << std::endl;
 
-//        drawDebug();
+        clock_t templStart = clock();
+        imageProcesor.processImage_TemplateMatch(matchOn);
+        double templElapsed = ((double)(clock() - templStart)) / (double)CLOCKS_PER_SEC;
+        std::cout << "Template Matching took " << templElapsed << "seconds." << std::endl;
+
+        drawDebug();
 
         cv::namedWindow(WINDOWNAME_FRAME, cv::WINDOW_NORMAL);
         cv::resizeWindow(WINDOWNAME_FRAME, 1032, 580);

@@ -25,9 +25,12 @@ public:
     void setImage(cv::Mat p_image);
     void processImage_Hough();
     void processImage_Sobel();
+    // automatically chooses thesholds, see implementation for details
+    void processImage_Canny();
     void processImage_Canny(double lowThreshold, double highTreshold, int kernelSize);
     void processImage_DistTrans();
     void processImage_TemplateMatch(TemplateType p_templType);
+    void templateMatch_Edges();
     cv::Mat getProcessedImage();
 
 
@@ -36,6 +39,7 @@ public:
     void debugOutput_Hough(std::vector<cv::Mat> &p_out);
     void debugOutput_Sobel(std::vector<cv::Mat> &p_out);
     void debugOutput_TemplateMatch(std::vector<cv::Mat> &p_out);
+
 private:
     cv::Mat m_calcImage;
     cv::Mat m_calcImage_gray;
@@ -64,6 +68,8 @@ private:
     bool m_templMatchDebugAvailable;
     cv::Mat m_bestMatchSpace_blacked;
     cv::Size m_bestTemplSize;
+
+    void findMatches(cv::Mat &p_matchSpace, std::vector<cv::Point>& p_out, const cv::Size &p_teplSize, float p_threshold);
 };
 
 #endif // IMAGEPROCESSOR_H

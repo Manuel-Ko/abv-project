@@ -65,34 +65,44 @@ void ImageProcessor::processImage_Sobel()
     m_sobelDebugAvailable = true;
 }
 
+void ImageProcessor::processImage_Canny()
+{
+    // calculate median
+//    int channels = 0;
+//    int histSize = 255;
+//    float histRange[] = {0,255};
+//    const float* ranges[] = {histRange};
+//    cv::Mat hist;
+//    cv::calcHist(&m_canny_result,1,&channels,cv::Mat(),hist,1,&histSize,ranges);
+
+//    int sum = 0;
+//    int median = 0;
+//    while(sum < m_calcImage_gray.total()/2.0 && median < 255)
+//    {
+//        sum += hist.at<float>(median);
+//        median++;
+//    }
+
+    //calculate mean grayvalue of input image
+    cv::Scalar meanSc = cv::mean(m_calcImage_gray);
+    int mean = meanSc[0];
+
+    // mean is used to determine threshold
+    processImage_Canny(0.3 * mean, 0.9 * mean, 3);
+
+}
+
 void ImageProcessor::processImage_Canny(double lowThreshold, double highTreshold, int kernelSize )
 {
     /// Reduce noise with a kernel 3x3
     cv::blur( m_calcImage_gray, m_canny_result, cv::Size(3,3) );
 
-    int channels = 0;
-    int histSize = 255;
-    float histRange[] = {0,255};
-    const float* ranges[] = {histRange};
-    cv::Mat hist;
-    cv::calcHist(&m_canny_result,1,&channels,cv::Mat(),hist,1,&histSize,ranges);
-
-    int sum = 0;
-    int bin = 0;
-    while(sum < m_calcImage_gray.total()/2.0 && bin < 255)
-    {
-        sum += hist.at<float>(bin);
-        bin++;
-    }
-
-    cv::Scalar meanSc = cv::mean(m_calcImage_gray);
-    int mean = meanSc[0];
 
     /// Canny detector
-    cv::Canny( m_canny_result, m_canny_result, 0.3* mean, 0.9*mean, kernelSize );
+    cv::Canny( m_canny_result, m_canny_result, lowThreshold, highTreshold, kernelSize );
 
     //## Debug
-    if(true)
+    if(false)
     {
         cv::namedWindow("Canny", CV_WINDOW_KEEPRATIO);
         cv::resizeWindow("Canny", (int)(m_canny_result.cols * 0.3), (int)(m_canny_result.rows * 0.3));
@@ -108,7 +118,7 @@ void ImageProcessor::processImage_DistTrans()
     cv::distanceTransform(invCanny, m_distanceTrans, CV_DIST_L2, CV_DIST_MASK_PRECISE);
 
     //## Debug
-    if(true)
+    if(false)
     {
         cv::Mat dist;
         cv::normalize(m_distanceTrans, dist, 0.0, 1.0, cv::NORM_MINMAX);
@@ -123,14 +133,14 @@ void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
     // clear existing matchspaces
     m_matchPositions.clear();
 
-    TemplateType matchOn = p_templType;
     cv::Mat origTempl;
     cv::Mat resizedTempl;
     // the image on which the template should be looked for
     cv::Mat matchOnImage;
 
+
     // set templates and imgages in regard to matching type
-    switch(matchOn)
+    switch(p_templType)
     {
     case Color:
         origTempl = cv::imread("template_color.jpg");
@@ -143,8 +153,11 @@ void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
         break;
     }
 
+    cv::resize(matchOnImage, matchOnImage,cv::Size(0,0), 0.3,0.3);
+    cv::resize(origTempl, origTempl,cv::Size(0,0),0.3,0.3);
+
     // scale pyramid parameters
-    const int MIN_SIZE = 40;
+    const int MIN_SIZE = 90;
     const int STEP_SIZE = 5;
     const size_t MAX_SCALE_LEVEL = unsigned int((100-MIN_SIZE)/(float)STEP_SIZE);
     double currMaxMatch = 0;
@@ -199,36 +212,121 @@ void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
 
     cv::normalize( resultScalePyr[currBestScaleLevel], resultScalePyr[currBestScaleLevel], 0, 1, cv::NORM_MINMAX, -1, cv::Mat() );
 
-    //######	for debugging	#####
+    //	pure mtchspace for debugging
     m_bestMatchSpace_pure = resultScalePyr[currBestScaleLevel].clone();
 
     //cv::threshold(resultScalePyr[currBestScaleLevel], resultScalePyr[currBestScaleLevel], 0.55, 1., CV_THRESH_TOZERO);
 
-
-    while (true)
-    {
-        // ###  $Parameter threshold
-        double minval, maxval, threshold = 0.55;
-        cv::Point minloc, maxloc;
-        cv::minMaxLoc(resultScalePyr[currBestScaleLevel], &minval, &maxval, &minloc, &maxloc);
-
-        if (maxval >= threshold)
-        {
-            m_matchPositions.push_back(maxloc);
-            //cv::floodFill(result, maxloc, cv::Scalar(0), 0, cv::Scalar(.1), cv::Scalar(1.));
-            cv::rectangle(resultScalePyr[currBestScaleLevel],
-                          cv::Point(maxloc.x - m_bestTemplSize.width/2, maxloc.y - m_bestTemplSize.height/2),
-                          cv::Point(maxloc.x + m_bestTemplSize.width/2, maxloc.y + m_bestTemplSize.height/2),
-                          cv::Scalar(0,0,0),-1);
-        }
-        else
-            break;
-    }
+    // find the MatchPositions
+    findMatches(resultScalePyr[currBestScaleLevel],m_matchPositions,m_bestTemplSize,0.55);
     m_bestMatchSpace_blacked = resultScalePyr[currBestScaleLevel];
 
 
     m_templMatchDebugAvailable = true;
 }
+
+void ImageProcessor::findMatches(cv::Mat &p_matchSpace, std::vector<cv::Point> &p_out, const cv::Size &p_teplSize, float p_threshold /*, min or max?*/ )
+{
+    double minval, maxval;
+    cv::Point minloc, maxloc;
+    cv::minMaxLoc(p_matchSpace, &minval, &maxval, &minloc, &maxloc);
+
+    while(maxval >= p_threshold)
+    {
+        p_out.push_back(maxloc);
+        cv::rectangle(p_matchSpace,
+                      cv::Point(maxloc.x - p_teplSize.width/2, maxloc.y - p_teplSize.height/2),
+                      cv::Point(maxloc.x + p_teplSize.width/2, maxloc.y + p_teplSize.height/2),
+                      cv::Scalar(0,0,0),-1);
+        cv::minMaxLoc(p_matchSpace, &minval, &maxval, &minloc, &maxloc);
+    }
+}
+
+void ImageProcessor::templateMatch_Edges()
+{
+    processImage_Canny();
+    processImage_DistTrans();
+
+    cv::Mat templ = cv::imread("template_canny3.jpg");
+    if(templ.empty())
+    {
+        std::cerr << "No tamplate found" << std::endl;
+        return;
+    }
+    const size_t templWidth = templ.cols;
+    const size_t templHeigth = templ.rows;
+
+
+//    // Create point set from Canny Output
+//	std::vector<cv::Point2d> image_points;
+//	for(int r = 0; r < m_canny_result.rows; r++)
+//	{
+//		for(int c = 0; c < m_canny_result.cols; c++)
+//		{
+//			if(m_canny_result.at<unsigned char>(r,c) == 255)
+//			{
+//				image_points.push_back(cv::Point2d(c,r));
+//			}
+//		}
+//	}
+
+    // Create point set from Template
+    std::vector<cv::Point2d> templ_points;
+    for(int r = 0; r < templHeigth; r++)
+    {
+        for(int c = 0; c < templWidth; c++)
+        {
+            if(templ.at<unsigned char>(r,c) == 255)
+            {
+                templ_points.push_back(cv::Point2d(c,r));
+            }
+        }
+    }
+
+    CV_Assert(m_canny_result.cols > templWidth && m_canny_result.rows > templHeigth);
+    const cv::Size result_size = cv::Size(m_canny_result.cols - templWidth, m_canny_result.rows - templHeigth);
+
+    //generate Array with mean distances between Template and Image for every possible template position
+    cv::Mat res = cv::Mat(result_size, CV_32F);
+    for(int y = 0; y < result_size.height; ++y)
+    {
+        for(int x = 0; x < result_size.width; ++x)
+        {
+//            //calculate the mean distance based on distTrans
+//            float distSum = 0;
+//            for(auto templPointsIter = templ_points.begin();
+//                templPointsIter != templ_points.end();
+//                ++templPointsIter)
+//            {
+//                distSum += m_distanceTrans.at<float>(*templPointsIter);
+//            }
+            //res.at<float>(y,x) = distSum/templ_points.size();
+
+//            std::vector<cv::Point> imPoints = std::vector<cv::Point>();
+//            for(int imY = y; imY < templHeigth; ++imY)
+//            {
+//                for(int imX = x; imX < templWidth; ++imX)
+//                {
+//                    if(m_canny_result.at<unsigned char>(imY,imX) == 255)
+//                    {
+//                        imPoints.push_back(cv::Point(imX,imY));
+//                    }
+//                }
+//            }
+            double max =(result_size.width * result_size.height );
+            double percent = x*(y+1)/max;
+            std::cout << x*(y+1) << "/" << max <<"\t" << percent << "%" << std::endl;
+        }
+        //std::cerr << "Y" << y << "/" << result_size.height << std::endl;
+    }
+
+    cv::namedWindow("edge distance match", CV_WINDOW_KEEPRATIO);
+    cv::resizeWindow("edge distance match", res.cols * 0.3, res.rows * 0.3 );
+    cv::imshow("edge distance match", res);
+
+    //findMatches(res,m_matchPositions,0.55);
+}
+
 
 /// @brief returns the processed Image
 cv::Mat ImageProcessor::getProcessedImage()
