@@ -19,7 +19,8 @@ public:
     enum TemplateType
     {
         Sobel,
-        Color
+        Color,
+        Gray
     };
 
     void setImage(cv::Mat p_image);
@@ -70,6 +71,10 @@ private:
     cv::Size m_bestTemplSize;
 
     void findMatches(cv::Mat &p_matchSpace, std::vector<cv::Point>& p_out, const cv::Size &p_teplSize, float p_threshold);
+    void fastMatchTemplate(cv::Mat& srca,  // The reference image
+                           cv::Mat& srcb,  // The template image
+                           cv::Mat& dst,   // Template matching result
+                           int maxlevel);
 };
 
 #endif // IMAGEPROCESSOR_H

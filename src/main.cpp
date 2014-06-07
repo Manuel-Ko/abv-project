@@ -66,6 +66,12 @@ int main(int argc, char** argv )
         case 2424832:
             calc_image = imageLoader.getPreviousImage();
             break;
+        case 0:
+            break;
+        default:
+            keyboard = cv::waitKey();
+            continue;
+            break;
         }
 
         if ( !calc_image.data )
@@ -74,7 +80,7 @@ int main(int argc, char** argv )
             return -1;
         }
 
-        ImageProcessor::TemplateType matchOn = ImageProcessor::Sobel;
+        ImageProcessor::TemplateType matchOn = ImageProcessor::Gray;
         imageProcesor.setImage(calc_image);
 
 

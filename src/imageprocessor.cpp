@@ -16,6 +16,86 @@ ImageProcessor::ImageProcessor() :
 //####  private ###
 //#################
 
+void show(const char* p_windowName,cv::Mat p_image, float p_size)
+{
+    cv::namedWindow(p_windowName, CV_WINDOW_KEEPRATIO);
+    cv::resizeWindow(p_windowName,p_image.cols * p_size, p_image.rows * p_size);
+    cv::imshow(p_windowName, p_image);
+}
+
+void ImageProcessor::fastMatchTemplate(cv::Mat& srca,  // The reference image
+                       cv::Mat& srcb,  // The template image
+                       cv::Mat& dst,   // Template matching result
+                       int maxlevel)   // Number of levels
+{
+    std::vector<cv::Mat> refs, tpls, results;
+
+    // Build Gaussian pyramid
+    cv::buildPyramid(srca, refs, maxlevel);
+    cv::buildPyramid(srcb, tpls, maxlevel);
+
+    cv::Mat ref, tpl, res;
+
+    // Process each level
+    for (int level = maxlevel; level >= 0; level--)
+    {
+        ref = refs[level];
+        tpl = tpls[level];
+        res = cv::Mat::zeros(ref.size() + cv::Size(1,1) - tpl.size(), CV_32FC1);
+
+        if (level == maxlevel)
+        {
+            // On the smallest level, just perform regular template matching
+            cv::matchTemplate(ref, tpl, res, CV_TM_CCORR_NORMED);
+        }
+        else
+        {
+            // On the next layers, template matching is performed on pre-defined
+            // ROI areas.  We define the ROI using the template matching result
+            // from the previous layer.
+
+            cv::Mat mask;
+            cv::pyrUp(results.back(), mask);
+
+            cv::Mat mask8u;
+            mask.convertTo(mask8u, CV_8U,10);
+
+            // Find matches from previous layer
+            std::vector<std::vector<cv::Point> > contours;
+            cv::findContours(mask8u, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+
+            // Use the contours to define region of interest and
+            // perform template matching on the areas
+            for (int i = 0; i < contours.size(); i++)
+            {
+				cv::Rect r = cv::boundingRect(contours[i]);
+				cv::Rect foo = r + (tpl.size() - cv::Size(1,1));
+                cv::matchTemplate(
+                    ref(r + (tpl.size() - cv::Size(1,1))),
+                    tpl,
+                    res(r),
+                    CV_TM_CCORR_NORMED
+                );
+            }
+        }
+
+        //## Debug
+        if(false)
+        {
+            std::string windowname = "scale" + std::to_string(level);
+            show(windowname.c_str(),res,0.6);
+        }
+
+        // Only keep good matches
+        cv::threshold(res, res, 0.3, 1., CV_THRESH_TOZERO);
+        results.push_back(res);
+
+    }
+
+    res.copyTo(dst);
+}
+
+
 //#################
 //####  public  ###
 //#################
@@ -143,7 +223,7 @@ void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
     switch(p_templType)
     {
     case Color:
-        origTempl = cv::imread("template_color.jpg");
+        origTempl = cv::imread("template_color_big.jpg");
         matchOnImage = m_calcImage;
         break;
     case Sobel:
@@ -151,14 +231,20 @@ void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
         processImage_Sobel();
         matchOnImage = m_sobel_result;
         break;
+    case Gray:
+        origTempl = cv::imread("template_color_big.jpg");
+        cv::cvtColor(origTempl,origTempl,CV_BGR2GRAY);
+        matchOnImage = m_calcImage;
+        cv::cvtColor(matchOnImage, matchOnImage, CV_BGR2GRAY);
+        break;
     }
 
-    cv::resize(matchOnImage, matchOnImage,cv::Size(0,0), 0.3,0.3);
-    cv::resize(origTempl, origTempl,cv::Size(0,0),0.3,0.3);
+    //cv::resize(matchOnImage, matchOnImage,cv::Size(0,0), 0.3,0.3);
+    //cv::resize(origTempl, origTempl,cv::Size(0,0),0.3,0.3);
 
     // scale pyramid parameters
-    const int MIN_SIZE = 90;
-    const int STEP_SIZE = 5;
+    const int MIN_SIZE = 50;
+    const int STEP_SIZE = 10;
     const size_t MAX_SCALE_LEVEL = unsigned int((100-MIN_SIZE)/(float)STEP_SIZE);
     double currMaxMatch = 0;
     size_t currBestScaleLevel = 0;
@@ -182,13 +268,9 @@ void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
         // TODO: use only 2 Mats and hold the "better" to optimize memory consumption
         resultScalePyr.push_back(cv::Mat(result_rows, result_cols,CV_32FC1));
 
-        int foo = matchOnImage.depth();
-        int bar = matchOnImage.type();
-        int lolo = resizedTempl.type();
-        CV_32F;
 
         cv::matchTemplate( matchOnImage, resizedTempl, resultScalePyr.back(), CV_TM_CCOEFF_NORMED );
-
+        //fastMatchTemplate( matchOnImage, resizedTempl, resultScalePyr.back(), 2);
         // find the scale with the best match
         double minval, maxval;
         cv::Point minloc, maxloc;
