@@ -17,6 +17,8 @@ main.cpp
 add_executable(test
 imageloader.h
 imageloader.cpp
+targetinstance.h
+targetinstance.cpp
 opencv_test.cpp)
 target_link_libraries( targetAnalyser ${OpenCV_LIBS} )
 target_link_libraries( test ${OpenCV_LIBS} )
