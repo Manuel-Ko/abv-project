@@ -4,8 +4,9 @@ ImageProcessor::ImageProcessor() :
     m_calcImage(cv::Mat()),
     m_calcImage_gray(cv::Mat()),
     m_canny_result(cv::Mat()),
+    m_tmplMatchDownScale(1.0),
     m_imageProcessed(false),
-    m_matchPositions(std::vector<cv::Point>()),
+    m_matches(std::vector<TemplateMatch>()),
     m_houghDebugAvailable(false),
     m_sobelDebugAvailable(false),
     m_templMatchDebugAvailable(false)
@@ -208,12 +209,15 @@ void ImageProcessor::processImage_DistTrans()
     }
 }
 
-void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
+std::vector<TemplateMatch> ImageProcessor::processImage_TemplateMatch(const cv::Mat& p_templ, TemplateType p_templType,
+                                                const int p_minSize,
+                                                const int p_stepSize,
+                                                const float p_downScale)
 {
     // clear existing matchspaces
-    m_matchPositions.clear();
+    m_matches.clear();
+    m_tmplMatchDownScale = p_downScale;
 
-    cv::Mat origTempl;
     cv::Mat resizedTempl;
     // the image on which the template should be looked for
     cv::Mat matchOnImage;
@@ -223,42 +227,41 @@ void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
     switch(p_templType)
     {
     case Color:
-        origTempl = cv::imread("template_color_big.jpg");
+        //origTempl = cv::imread("template_color_big.jpg");
         matchOnImage = m_calcImage;
         break;
     case Sobel:
-        origTempl = cv::imread("template_sobel.jpg",0);
+        //origTempl = cv::imread("template_sobel.jpg",0);
         processImage_Sobel();
         matchOnImage = m_sobel_result;
         break;
     case Gray:
-        origTempl = cv::imread("template_color_big.jpg");
-        cv::cvtColor(origTempl,origTempl,CV_BGR2GRAY);
+        //origTempl = cv::imread("template_color_big.jpg");
+        //cv::cvtColor(p_templ,p_templ,CV_BGR2GRAY);
         matchOnImage = m_calcImage;
         cv::cvtColor(matchOnImage, matchOnImage, CV_BGR2GRAY);
         break;
     }
 
-    //cv::resize(matchOnImage, matchOnImage,cv::Size(0,0), 0.3,0.3);
-    //cv::resize(origTempl, origTempl,cv::Size(0,0),0.3,0.3);
+    cv::Mat scaledTempl;
+    cv::resize(matchOnImage, matchOnImage,cv::Size(0,0), m_tmplMatchDownScale,m_tmplMatchDownScale);
+    cv::resize(p_templ, scaledTempl,cv::Size(0,0),m_tmplMatchDownScale,m_tmplMatchDownScale);
 
     // scale pyramid parameters
-    const int MIN_SIZE = 50;
-    const int STEP_SIZE = 10;
-    const size_t MAX_SCALE_LEVEL = unsigned int((100-MIN_SIZE)/(float)STEP_SIZE);
+    const size_t MAX_SCALE_LEVEL = unsigned int((100-p_minSize)/(float)p_stepSize);
     double currMaxMatch = 0;
     size_t currBestScaleLevel = 0;
     std::vector<cv::Mat> resultScalePyr = std::vector<cv::Mat>();
-    size_t scaleLevel = 0;
 
-    for(int scale = 100; scale >= MIN_SIZE; scale -= STEP_SIZE)
+    size_t scaleLevel = 0;
+    for(int scale = 100; scale >= p_minSize; scale -= p_stepSize)
     {
         clock_t templStartTime = clock();
         // show progresss
         std::cout << "Matching at level: "  << scaleLevel << "/" << MAX_SCALE_LEVEL << std::endl;
 
-        // Resize the template to all sizes between 1 and MIN_SIZE in steps of size STEP_SIZE
-        cv::resize(origTempl,resizedTempl,cv::Size(0,0),scale/100.0f,scale/100.0f);
+        // Resize the template to all sizes between 1 and p_minSize in steps of size p_stepSize
+        cv::resize(scaledTempl,resizedTempl,cv::Size(0,0),scale/100.0f,scale/100.0f);
 
         int result_cols =  matchOnImage.cols - resizedTempl.cols + 1;
         int result_rows = matchOnImage.rows - resizedTempl.rows + 1;
@@ -300,14 +303,15 @@ void ImageProcessor::processImage_TemplateMatch(TemplateType p_templType)
     //cv::threshold(resultScalePyr[currBestScaleLevel], resultScalePyr[currBestScaleLevel], 0.55, 1., CV_THRESH_TOZERO);
 
     // find the MatchPositions
-    findMatches(resultScalePyr[currBestScaleLevel],m_matchPositions,m_bestTemplSize,0.55);
+    findMatches(resultScalePyr[currBestScaleLevel],m_matches,m_bestTemplSize,0.91);
     m_bestMatchSpace_blacked = resultScalePyr[currBestScaleLevel];
 
-
     m_templMatchDebugAvailable = true;
+
+    return m_matches;
 }
 
-void ImageProcessor::findMatches(cv::Mat &p_matchSpace, std::vector<cv::Point> &p_out, const cv::Size &p_teplSize, float p_threshold /*, min or max?*/ )
+void ImageProcessor::findMatches(cv::Mat &p_matchSpace, std::vector<TemplateMatch> &p_out, const cv::Size &p_teplSize, float p_threshold /*, min or max?*/ )
 {
     double minval, maxval;
     cv::Point minloc, maxloc;
@@ -315,7 +319,7 @@ void ImageProcessor::findMatches(cv::Mat &p_matchSpace, std::vector<cv::Point> &
 
     while(maxval >= p_threshold)
     {
-        p_out.push_back(maxloc);
+        p_out.push_back(TemplateMatch(maxloc,p_teplSize));
         cv::rectangle(p_matchSpace,
                       cv::Point(maxloc.x - p_teplSize.width/2, maxloc.y - p_teplSize.height/2),
                       cv::Point(maxloc.x + p_teplSize.width/2, maxloc.y + p_teplSize.height/2),
@@ -466,10 +470,11 @@ void ImageProcessor::debugOutput_TemplateMatch(std::vector<cv::Mat> &p_out)
 
     // create image that shows positions of template on the orignal image
     cv::Mat displ_image = m_calcImage.clone();
-    for(unsigned int i = 0; i < m_matchPositions.size(); ++i)
+    cv::resize(displ_image, displ_image, cv::Size(0,0), m_tmplMatchDownScale, m_tmplMatchDownScale);
+    for(unsigned int i = 0; i < m_matches.size(); ++i)
     {
-        cv::rectangle( displ_image, m_matchPositions[i], cv::Point( m_matchPositions[i].x + m_bestTemplSize.width , m_matchPositions[i].y + m_bestTemplSize.height ), cv::Scalar::all(0), 5, 8, 0 );
-        cv::circle(displ_image,cv::Point(m_matchPositions[i].x + m_bestTemplSize.width/2, m_matchPositions[i].y + m_bestTemplSize.height/2),20,cv::Scalar(0,0,255),-1);
+        cv::rectangle( displ_image, m_matches[i].getTopLeft(),m_matches[i].getBottomRight(), cv::Scalar::all(0), 5, 8, 0 );
+        cv::circle(displ_image,m_matches[i].getCenter(),10,cv::Scalar(0,0,255),-1);
     }
 
     // ####     pass debug images   ####

@@ -15,7 +15,9 @@ public:
     int getIndex();
     int getMaxIndex();
     cv::Mat getCurrentImage();
+    void goToNextImage();
     cv::Mat getNextImage();
+    void goTOPrevImage();
     cv::Mat getPreviousImage();
     cv::Mat getImageAt(int m_index);
 

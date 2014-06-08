@@ -75,7 +75,7 @@ cv::Mat ImageLoader::getCurrentImage()
     return m_currentImage.clone();
 }
 
-cv::Mat ImageLoader::getNextImage()
+void ImageLoader::goToNextImage()
 {
     ++m_index;
     if(m_index > MAX_INDEX)
@@ -83,10 +83,15 @@ cv::Mat ImageLoader::getNextImage()
         m_index = 0;
     }
     loadImage(m_index);
+}
+
+cv::Mat ImageLoader::getNextImage()
+{
+    goToNextImage();
     return m_currentImage.clone();
 }
 
-cv::Mat ImageLoader::getPreviousImage()
+void ImageLoader::goTOPrevImage()
 {
     --m_index;
     if(m_index < 0)
@@ -94,6 +99,11 @@ cv::Mat ImageLoader::getPreviousImage()
         m_index = MAX_INDEX;
     }
     loadImage(m_index);
+}
+
+cv::Mat ImageLoader::getPreviousImage()
+{
+    goTOPrevImage();
     return m_currentImage.clone();
 }
 

@@ -11,6 +11,8 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/nonfree/features2d.hpp>
 
+#include "templatematch.h"
+
 class ImageProcessor
 {
 public:
@@ -30,7 +32,10 @@ public:
     void processImage_Canny();
     void processImage_Canny(double lowThreshold, double highTreshold, int kernelSize);
     void processImage_DistTrans();
-    void processImage_TemplateMatch(TemplateType p_templType);
+    std::vector<TemplateMatch> processImage_TemplateMatch(const cv::Mat& p_templ,
+                                    TemplateType p_templType,
+                                    const int p_minSize,
+                                    const int p_stepSize, const float p_downScale);
     void templateMatch_Edges();
     cv::Mat getProcessedImage();
 
@@ -61,16 +66,17 @@ private:
     cv::Mat m_distanceTrans;
 
     //used for templateMatching
-    std::vector<cv::Point> m_matchPositions;
+    std::vector<TemplateMatch> m_matches;
     cv::Point m_matchLoc;
     cv::Mat m_bestMatchSpace_pure;
+    float m_tmplMatchDownScale;
+    cv::Size m_bestTemplSize;
 
     // debug templ matching
     bool m_templMatchDebugAvailable;
     cv::Mat m_bestMatchSpace_blacked;
-    cv::Size m_bestTemplSize;
 
-    void findMatches(cv::Mat &p_matchSpace, std::vector<cv::Point>& p_out, const cv::Size &p_teplSize, float p_threshold);
+    void findMatches(cv::Mat &p_matchSpace, std::vector<TemplateMatch> &p_out, const cv::Size &p_teplSize, float p_threshold);
     void fastMatchTemplate(cv::Mat& srca,  // The reference image
                            cv::Mat& srcb,  // The template image
                            cv::Mat& dst,   // Template matching result
