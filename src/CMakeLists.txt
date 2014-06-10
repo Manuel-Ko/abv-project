@@ -20,7 +20,12 @@ imageloader.cpp
 targetinstance.h
 targetinstance.cpp
 opencv_test.cpp)
+
+add_executable(ellipseTest
+ellipseTest.cpp)
+
 target_link_libraries( targetAnalyser ${OpenCV_LIBS} )
 target_link_libraries( test ${OpenCV_LIBS} )
+target_link_libraries( ellipseTest ${OpenCV_LIBS} )
 
 
