@@ -52,6 +52,153 @@ void on_trackbar(int, void*)
 
 }
 
+cv::Vec3f calcCircle(cv::Point2f a, cv::Point2f b, cv::Point2f c)
+{
+	cv::Matx33f first (a.x, a.y, 1,
+						b.x, b.y, 1,
+						c.x, c.y, 1);
+	cv::Matx33f second (a.x*a.x + a.y*a.y, a.y, 1,
+						b.x*b.x + b.y*b.y, b.y, 1,
+						c.x*c.x + c.y*c.y, c.y, 1);
+	cv::Matx33f third (a.x*a.x + a.y*a.y, a.x, 1,
+						b.x*b.x + b.y*b.y, b.x, 1,
+						c.x*c.x + c.y*c.y, c.x, 1);
+	cv::Matx33f fourth (a.x*a.x + a.y*a.y, a.x, a.y,
+						b.x*b.x + b.y*b.y, b.x, b.y,
+						c.x*c.x + c.y*c.y, c.x, c.y);
+
+	float firstDet = cv::determinant(first);
+	float secondDet = -1 * cv::determinant(second);
+	float thirdDet = cv::determinant(third);
+	float fourthDet = -1 * cv::determinant(fourth);
+
+	float centerX = -1 * secondDet/(2*firstDet);
+	float centerY = -1 * thirdDet/(2*firstDet);
+	float radius = sqrt(secondDet*secondDet + thirdDet*thirdDet - 4 * firstDet * fourthDet)/(2*abs(firstDet));
+
+	return cv::Vec3f(centerX, centerY, radius);
+}
+
+std::vector<cv::Vec3f> circleRANSAC(const std::vector<cv::Point>& p_points, const cv::Mat& p_distanceImage,
+									float p_threshold , int p_iterations, float p_minRad, float p_maxRad, float p_minDist)
+{
+	const bool DEBUG = true;
+	std::vector<cv::Vec3f> out = std::vector<cv::Vec3f>();
+	
+	int index[3];
+	for(int i = 0; i < 3;i++)
+	{
+		bool match = false;
+		do {
+			  match = false;
+			  index[i] = rand()%p_points.size();
+			  for(int j=0; j<i ;j++)
+			  {
+					if(index[i] == index[j])
+					{
+						match=true;
+					}
+			  }
+		}while(match);
+	}
+
+	for(size_t iteration = 0; iteration < p_iterations; ++iteration)
+	{
+		cv::Vec3f circ = calcCircle(p_points[index[0]], p_points[index[1]], p_points[index[2]]);
+		int radius = cvRound(circ[2]);
+		cv::Point circleCenter(cvRound(circ[0]), cvRound(circ[1]));
+
+		bool tooSmall = radius < p_minRad;
+		bool tooBig = radius > p_maxRad;
+		if(tooSmall || tooBig)
+		{
+			continue;
+		}
+
+		//int oddplus = 1 - radius%2;
+
+		// sample Circle on Mat with minimum size
+		cv::Mat circSamples = cv::Mat::zeros(cv::Size(radius * 2 + 1,radius * 2 + 1), CV_8UC1);
+		cv::Point sampleCircleCenter(radius, radius);
+		cv::circle(circSamples, sampleCircleCenter, radius, cv::Scalar(255));
+
+		std::vector<cv::Point> circlePoints = std::vector<cv::Point>();
+		//collect circle points
+		for(int row = 0; row < circSamples.rows; ++row)
+		{
+			uchar* p = circSamples.ptr(row);
+			for(int col = 0; col < circSamples.cols; ++col) 
+			{
+				if(*p == 255)
+				{
+					circlePoints.push_back(cv::Point(col,row));
+				}
+				 *p++;
+			}
+		}
+
+		// ## Debug
+		cv::Mat debugImg;
+		if(DEBUG)
+		{
+			cv::threshold(p_distanceImage,debugImg,0,255,CV_THRESH_BINARY_INV);
+			cv::cvtColor(debugImg,debugImg, CV_GRAY2BGR);
+			cv::circle(debugImg,circleCenter, radius, cv::Scalar(255,0,0),1);
+			cv::circle(debugImg,circleCenter, 2, cv::Scalar(255,0,0),-1);
+		}
+
+		float distSum = 0;
+		for(size_t i = 0; i < circlePoints.size(); ++i)
+		{
+			// translate points back on their original Position as detected by calcCircle
+			circlePoints[i] -= sampleCircleCenter;
+			circlePoints[i] += circleCenter;
+			
+			bool upLeftOutside = circlePoints[i].x < 0 || circlePoints[i].y < 0;
+			bool bottomRightOutside = circlePoints[i].x >= p_distanceImage.cols || circlePoints[i].y >= p_distanceImage.rows;
+			if(upLeftOutside || bottomRightOutside)
+			{
+				continue;
+			}
+
+			float curVal = p_distanceImage.at<float>(circlePoints[i].y, circlePoints[i].x );
+			distSum += curVal;
+			if(DEBUG)
+			{
+				cv::line(debugImg,circlePoints[i],circlePoints[i],cv::Scalar(0,255,255));
+				if(curVal <= 0.0001)
+				{
+					cv::line(debugImg, circlePoints[i], circlePoints[i], cv::Scalar(255,0,255));
+				}
+			}
+		}
+
+		// use mean Distance
+		distSum /= circlePoints.size();
+
+		if(distSum <= p_threshold)
+		{
+			bool tooClose = false;
+			// check for detected circles close to current
+			for(int circIdx = 0; circIdx < out.size(); ++circIdx)
+			{
+				cv::Point oldCirc = cv::Point(out[circIdx][0], out[circIdx][1]);
+				float circDist = cv::norm(oldCirc - sampleCircleCenter);
+
+				if(circDist < p_minDist)
+				{
+					tooClose = true;
+				}
+			}
+			if(!tooClose)
+			{
+				out.push_back(circ);
+			}
+		}
+	}
+	return out;
+}
+
 void CannyThreshold(int, void*)
 {
   /// Reduce noise with a kernel 3x3
@@ -434,15 +581,24 @@ void detectBulletHoles(cv::Mat p_image, TargetInstance& p_target)
     cv::Scalar upperBounds = cv::Scalar(255,50,255);
     cv::inRange(roiImage,lowerBounds,upperBounds,thresholdImage);
 
-	cv::Mat holeMask = cv::Mat(roiImage.size(), CV_8UC1);
+	cv::Mat holeMask = cv::Mat::zeros(roiImage.size(), CV_8UC1);
     std::vector<std::vector<cv::Point>> contours = std::vector<std::vector<cv::Point>>();
     cv::findContours(thresholdImage, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE);
     std::vector<std::vector<cv::Point>> bulletHoles = std::vector<std::vector<cv::Point>>();
 
-    for(int i = 0; i < contours.size(); ++i)
+    // ## parameter bullethole
+	double maxSideLength = std::max(roi.width, roi.height);
+	double minDist = maxSideLength/22;
+	double minRad = maxSideLength/37;
+	double maxRad = 2*minRad;
+	
+	for(int i = 0; i < contours.size(); ++i)
     {
         cv::Rect bounds = cv::boundingRect(contours[i]);
-		if(bounds.width <= roi.width/2 && bounds.height <= roi.height/2)
+		//overlapping holes can form a bigger region than maxRad
+		bool tooBig = bounds.width > roi.width/2 || bounds.height > roi.height/2;
+		bool tooSmall = bounds.width < minRad && bounds.height < minRad;
+		if(!tooSmall && !tooBig)
         {
             double area = cv::contourArea(contours[i]);
             if(area >= 0.5 * bounds.area())
@@ -452,38 +608,56 @@ void detectBulletHoles(cv::Mat p_image, TargetInstance& p_target)
        }
     }
 
-    // ## Debug
-    cv::cvtColor(roiImage,roiImage,CV_HSV2BGR);
+
+	std::vector<cv::Vec3f> circles = std::vector<cv::Vec3f>();
     for(int i = 0; i < bulletHoles.size(); ++i)
     {
-        cv::drawContours(holeMask, bulletHoles,i,cv::Scalar(255,0,0),-1);
-    }
+		cv::Mat holeContours = cv::Mat::zeros(holeMask.size(),CV_8UC1);
+        cv::drawContours(holeMask, bulletHoles,i,cv::Scalar(255),-1);
+		cv::drawContours(holeContours, bulletHoles,i,cv::Scalar(255), 1);
 
-	// ## parameter bullethole
-	double maxSideLength = std::max(roi.width, roi.height);
-	double minDist = maxSideLength/22;
-	double minRad = maxSideLength/37;
-	double maxRad = 2*minRad;
+		cv::bitwise_not(holeContours,holeContours);
+		cv::Mat holeDistTrans;
+		cv::distanceTransform(holeContours, holeDistTrans, CV_DIST_L2, CV_DIST_MASK_PRECISE);
 
-    std::vector<cv::Vec3f> circles = std::vector<cv::Vec3f>();
-    cv::HoughCircles(holeMask,circles,CV_HOUGH_GRADIENT,1,minDist,100,8,minRad,maxRad);
+		// TODO: use Lists instead of vectors
+		std::vector<cv::Vec3f> holeCircles = circleRANSAC(bulletHoles[i],holeDistTrans,10,30,minRad,maxRad,minDist);
+		for(auto circIter = holeCircles.begin(); circIter != holeCircles.end(); ++circIter)
+		{
+			circles.push_back(*circIter);
+		}
+	}
+
+    
+    //cv::HoughCircles(holeMask,circles,CV_HOUGH_GRADIENT,1,minDist,100,8,minRad,maxRad);
 	//30,100,8,15,60
-	cv::Canny(holeMask,holeMask,50,100);
+	
+	// ## Debug
+	cv::Mat debugHoleImage(holeMask.size(), CV_8UC1);
+	cv::Canny(holeMask,debugHoleImage,50,100);
 
-    // ## Debug
-    //cv::cvtColor(roiImage,roiImage,CV_HSV2BGR);
+
     for( size_t i = 0; i < circles.size(); i++ )
     {
-        p_target.addBulletHole(circles[i]);
+		cv::Point samplePoint = cv::Point(circles[i][0], circles[i][1]); 
+		//samplePoint -= roi.tl();
+		unsigned char sampleVal = holeMask.at<unsigned char>(samplePoint.y, samplePoint.x);
+		if( sampleVal == 255 )
+		{
+			//holeMask.at<unsigned char>(samplePoint.x, samplePoint.y) = 120;
+			p_target.addBulletHole(circles[i]);
 
-        // ## Debug
-        cv::Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
-        int radius = cvRound(circles[i][2]);
-        // circle center
-        cv::circle( holeMask, center, 3, cv::Scalar(180,255,0), -1, 8, 0 );
-        // circle outline
-        cv::circle( holeMask, center, radius, cv::Scalar(180,0,255), 1, 8, 0 );
+			// ## Debug
+			cv::Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+			int radius = cvRound(circles[i][2]);
+			// circle center
+			cv::circle( debugHoleImage, center, 3, cv::Scalar(180,255,0), -1, 8, 0 );
+			// circle outline
+			cv::circle( debugHoleImage, center, radius, cv::Scalar(180,0,255), 1, 8, 0 );
+		}
+        
     }
+
 
 
 
