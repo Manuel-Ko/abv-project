@@ -17,9 +17,13 @@ main.cpp
 add_executable(test
 imageloader.h
 imageloader.cpp
+myImageProcessing.h
+myImageProcessing.cpp
 targetinstance.h
 targetinstance.cpp
-opencv_test.cpp)
+targetfinder.h
+targetfinder.cpp
+main2.cpp)
 
 add_executable(ellipseTest
 ellipseTest.cpp)

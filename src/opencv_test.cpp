@@ -3,6 +3,7 @@
 #include <opencv2/opencv.hpp>
 #include "imageloader.h"
 #include "targetinstance.h"
+#include "targetfinder.h"
 
 using namespace cv;
 
@@ -31,7 +32,7 @@ void show(const char* p_windowName,cv::Mat p_image, float p_size)
         return;
     }
     cv::namedWindow(p_windowName, CV_WINDOW_KEEPRATIO);
-    cv::resizeWindow(p_windowName,p_image.cols * p_size, p_image.rows * p_size);
+    cv::resizeWindow(p_windowName,cvRound(p_image.cols * p_size), cvRound(p_image.rows * p_size));
     cv::imshow(p_windowName, p_image);
 }
 
@@ -50,6 +51,13 @@ void on_trackbar(int, void*)
 	
     imshow("Display Image", modified);
 
+}
+
+bool isPointInImage(const cv::Mat& p_image, cv::Point p_point)
+{
+	bool upLeftOutside = p_point.x < 0 || p_point.y < 0;
+	bool bottomRightOutside = p_point.x >= p_image.cols || p_point.y >= p_image.rows;
+	return !(upLeftOutside || bottomRightOutside);
 }
 
 cv::Vec3f calcCircle(cv::Point2f a, cv::Point2f b, cv::Point2f c)
@@ -80,30 +88,32 @@ cv::Vec3f calcCircle(cv::Point2f a, cv::Point2f b, cv::Point2f c)
 }
 
 std::vector<cv::Vec3f> circleRANSAC(const std::vector<cv::Point>& p_points, const cv::Mat& p_distanceImage,
-									float p_threshold , int p_iterations, float p_minRad, float p_maxRad, float p_minDist)
+                                    float p_threshold , size_t p_iterations, float p_minRad, float p_maxRad, float p_minDist)
 {
 	const bool DEBUG = true;
 	std::vector<cv::Vec3f> out = std::vector<cv::Vec3f>();
-	
-	int index[3];
-	for(int i = 0; i < 3;i++)
-	{
-		bool match = false;
-		do {
-			  match = false;
-			  index[i] = rand()%p_points.size();
-			  for(int j=0; j<i ;j++)
-			  {
-					if(index[i] == index[j])
-					{
-						match=true;
-					}
-			  }
-		}while(match);
-	}
+	std::vector<float> meanDists = std::vector<float>();
 
 	for(size_t iteration = 0; iteration < p_iterations; ++iteration)
 	{
+		// find 3 diffetent random Points
+		int index[3];
+		for(int i = 0; i < 3;i++)
+		{
+			bool match = false;
+			do {
+				  match = false;
+				  index[i] = rand()%p_points.size();
+				  for(int j=0; j<i ;j++)
+				  {
+						if(index[i] == index[j])
+						{
+							match=true;
+						}
+				  }
+			}while(match);
+		}
+
 		cv::Vec3f circ = calcCircle(p_points[index[0]], p_points[index[1]], p_points[index[2]]);
 		int radius = cvRound(circ[2]);
 		cv::Point circleCenter(cvRound(circ[0]), cvRound(circ[1]));
@@ -145,6 +155,12 @@ std::vector<cv::Vec3f> circleRANSAC(const std::vector<cv::Point>& p_points, cons
 			cv::cvtColor(debugImg,debugImg, CV_GRAY2BGR);
 			cv::circle(debugImg,circleCenter, radius, cv::Scalar(255,0,0),1);
 			cv::circle(debugImg,circleCenter, 2, cv::Scalar(255,0,0),-1);
+			cv::Scalar rndColor = cv::Scalar(0,0,255);
+
+			// Points to generate the circle
+			cv::line(debugImg,p_points[index[0]], p_points[index[0]], rndColor);
+			cv::line(debugImg,p_points[index[1]], p_points[index[1]], rndColor);
+			cv::line(debugImg,p_points[index[2]], p_points[index[2]], rndColor);
 		}
 
 		float distSum = 0;
@@ -154,9 +170,8 @@ std::vector<cv::Vec3f> circleRANSAC(const std::vector<cv::Point>& p_points, cons
 			circlePoints[i] -= sampleCircleCenter;
 			circlePoints[i] += circleCenter;
 			
-			bool upLeftOutside = circlePoints[i].x < 0 || circlePoints[i].y < 0;
-			bool bottomRightOutside = circlePoints[i].x >= p_distanceImage.cols || circlePoints[i].y >= p_distanceImage.rows;
-			if(upLeftOutside || bottomRightOutside)
+
+			if(!isPointInImage(p_distanceImage, circlePoints[i]))
 			{
 				continue;
 			}
@@ -180,19 +195,29 @@ std::vector<cv::Vec3f> circleRANSAC(const std::vector<cv::Point>& p_points, cons
 		{
 			bool tooClose = false;
 			// check for detected circles close to current
-			for(int circIdx = 0; circIdx < out.size(); ++circIdx)
+            for(size_t circIdx = 0; circIdx < out.size(); ++circIdx)
 			{
-				cv::Point oldCirc = cv::Point(out[circIdx][0], out[circIdx][1]);
-				float circDist = cv::norm(oldCirc - sampleCircleCenter);
+                cv::Point oldCirc = cv::Point(cvRound(out[circIdx][0]), cvRound(out[circIdx][1]));
+				float circDist = cv::norm(oldCirc - circleCenter);
 
 				if(circDist < p_minDist)
 				{
 					tooClose = true;
+					float oldMean = meanDists[circIdx];
+					if(oldMean > distSum)
+					{
+						// replace old circle if it's too close and has worse score
+						// TODO: check other circles if they now hurt minDist criterion
+						out[circIdx] = circ;
+						meanDists[circIdx] = distSum;
+					}
+					break;
 				}
 			}
 			if(!tooClose)
 			{
 				out.push_back(circ);
+				meanDists.push_back(distSum);
 			}
 		}
 	}
@@ -273,7 +298,7 @@ bool evaluateFirstCondition_Point(cv::Mat p_image, cv::Point p_point)
 bool evaluateFirstCondition(cv::Mat p_image, std::vector<cv::Point> p_contour)
 {
     int firstConditionCount = 0;
-    for(int i = 0; i < p_contour.size(); ++i)
+    for(size_t i = 0; i < p_contour.size(); ++i)
     {
         if(evaluateFirstCondition_Point(p_image,p_contour[i]))
         {
@@ -299,78 +324,55 @@ bool evaluateSecondCondition(cv::Rect p_rect)
 	return (res < 2);
 }
 
-void refineBullsEyes(cv::Mat& p_out, std::vector<cv::Point> p_contour)
+void findCoarseBullsEyes(std::vector<std::vector<cv::Point>>& coarseBullsEyes)
 {
-    if(p_out.dims < 2)
-	{
-        p_out = cv::Mat::zeros(image_gr.size(), CV_8UC1);
-	}
-    std::vector<std::vector<cv::Point>> contours = std::vector<std::vector<cv::Point>>();
-    contours.push_back(p_contour);
-    cv::Rect boundingRec = cv::boundingRect(contours[0]);
-    cv::Point contourCenter = cv::Point(boundingRec.tl().x + boundingRec.width/2, boundingRec.tl().y + boundingRec.height/2 );
-    for(int i = 0; i < contours[0].size(); ++i)
+    const double downSampleFac = 0.1;
+
+    cv::Mat prewitt;
+    cv::Mat downSampledImage;
+    cv::cvtColor(image,image_gr,CV_BGR2GRAY);
+    cv::resize(image_gr,downSampledImage,cv::Size(0,0), downSampleFac, downSampleFac);
+    previtt(downSampledImage, prewitt);
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(prewitt, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+
+    // ## Debug for contours at small resolution
+    cv::Mat conts = downSampledImage.clone();
+
+    // ## Debug for contours resized to full resolution
+//    cv::Mat resizedConts = image_gr.clone();
+//    cv::cvtColor(resizedConts,resizedConts,CV_GRAY2BGR);
+
+    for(size_t i = 0; i < contours.size(); ++i)
     {
-        contours[0][i] -= contourCenter;
-        contours[0][i] *= 1.1;
-        contours[0][i] += contourCenter;
-		
-		contours[0][i].x = std::max(0,contours[0][i].x);
-		contours[0][i].y = std::max(0,contours[0][i].y);
-        contours[0][i].x = std::min(image_gr.cols,contours[0][i].x);
-        contours[0][i].y = std::min(image_gr.rows,contours[0][i].y);
+        cv::Rect r = cv::boundingRect(contours[i]);
 
+        // ## parameter discard small contours
+        bool bigEnough = r.width >= 20 && r.height >= 20;
+        bool biggerCont = contours[i].size() >= 70;
+        if(bigEnough && biggerCont )
+        {
+            // test if contour is a BullsEye
+            if(evaluateFirstCondition(downSampledImage,contours[i]) && evaluateSecondCondition(r))
+            {
+                for(size_t j = 0; j < contours[i].size(); ++j)
+                {
+                    // ## Debug draw coarse contours on coarse image
+                    cv::circle(conts,contours[i][j],1,cv::Scalar(0,0,255),-1);
+
+                    contours[i][j].x *= cvRound(1/downSampleFac);
+                    contours[i][j].y *= cvRound(1/downSampleFac);
+
+
+
+                    // ## Debug draw coarse contours on highres image
+//                    cv::circle(resizedConts, contours[i][j],10,cv::Scalar(0,255,0),-1);
+                }
+                coarseBullsEyes.push_back(contours[i]);
+            }
+        }
     }
-    boundingRec = cv::boundingRect(contours[0]);
-    contourCenter = cv::Point(boundingRec.tl().x + boundingRec.width/2, boundingRec.tl().y + boundingRec.height/2 );
-    for(int i = 0; i < contours[0].size(); ++i)
-    {
-        contours[0][i] -= boundingRec.tl();
-    }
-
-    cv::Mat roiImage = image_gr(boundingRec);
-    // create a mask based on coarse contour
-    cv::Mat mask = cv::Mat::zeros(roiImage.size(), CV_8UC1);
-    cv::drawContours(mask,contours,0,cv::Scalar(255),-1);
-
-    // mask out roughly detected bullsEye
-    cv::Mat thresholdImage;
-
-    roiImage.copyTo(thresholdImage,mask);
-
-    // discard bright pixels as they are not part of the bullsEye
-    // ## parameter URGENT thresh for bullsEye
-    cv::threshold(thresholdImage,thresholdImage, 100,255,CV_THRESH_BINARY_INV);
-
-	cv::Mat tmp;
-	thresholdImage.copyTo(tmp,mask);
-
-
-	// closing the refined mask to maintain a circular shape
-    cv::Mat element2 = getStructuringElement( MORPH_RECT, cv::Size( 2*11 + 1, 2*11 + 1 ),
-                            cv::Point( 11, 11 ) );
-	cv::Mat element3 = getStructuringElement( MORPH_RECT, cv::Size( 2*2 + 1, 2*2 + 1 ),
-                            cv::Point( 2, 2 ) );
-    clock_t start = clock();
-	cv::erode(tmp,tmp,element3);
-    cv::dilate(tmp,tmp,element3);
-
-    cv::dilate(tmp,tmp,element2);
-    cv::erode(tmp,tmp,element2);
-	
-    
-
-    // end of profiling
-    double elapsed = (double)(clock() - start);
-    double elapsed_sec =  elapsed / (double)CLOCKS_PER_SEC;
-    std::cout << "postprocessing took  " << elapsed_sec << "seconds." << std::endl;
-
-
-
-    cv::Mat submat = p_out.colRange(boundingRec.x, boundingRec.x + boundingRec.width)
-                     .rowRange(boundingRec.y, boundingRec.y + boundingRec.height);
-    tmp.copyTo(submat,mask);
-
 }
 
 cv::Point findRingPoint(cv::Point p_p1, cv::Point p_p2)
@@ -450,36 +452,258 @@ cv::Point findRingPoint(cv::Point p_p1, cv::Point p_p2)
     }
 }
 
-//TODO: refactor
-void findOnAllRings(int i, std::vector<std::vector<cv::Point>> contours, int j, cv::Point center, std::vector<std::vector<cv::Point>>& targetRings)
+void findOnAllRings(cv::Point p_point, cv::Point p_targetCenter, std::vector<std::vector<cv::Point>>& p_targetRings)
 {
-    double distToCenter = cv::norm(contours[i][j] - center);
+    cv::Point distToCenterVec = p_point - p_targetCenter;
+    double distToCenter = cv::norm(distToCenterVec);
     double distOfRings = distToCenter/6;
     for(int ring = 1; ring < 10; ++ring)
     {
+        // point of bullsEye is already detected
         if(ring == 6)
         {
-            targetRings[ring-1].push_back(contours[i][j]);
+            p_targetRings[ring-1].push_back(p_point);
             continue;
         }
-        double scale7R1 = (ring * distOfRings - distOfRings/5)/ distToCenter;
-        double scale7R2 = (ring * distOfRings + distOfRings/5)/ distToCenter;
-        cv::Point ring7_1 = contours[i][j] - center;
-        cv::Point ring7_2;
-        ring7_2 = scale7R2 * ring7_1;
-        ring7_1 *= scale7R1;
-        ring7_1 += center;
-        ring7_2 += center;
-        //cv::line(resizedConts,ring7_1, ring7_2, cv::Scalar(150,150,150),1);
-        cv::Point finRingPoint = findRingPoint(ring7_1,ring7_2);
-        targetRings[ring-1].push_back(finRingPoint);
-        //cv::circle(resizedConts, finRingPoint,2,cv::Scalar(255,0,255),-1);
+        double scaleInner = (ring * distOfRings - distOfRings/5)/ distToCenter;
+        double scaleOuter = (ring * distOfRings + distOfRings/5)/ distToCenter;
+        cv::Point ringInner = scaleInner * distToCenterVec + p_targetCenter;
+        cv::Point ringOuter = scaleOuter * distToCenterVec + p_targetCenter;
+        cv::Point finalRingPoint = findRingPoint(ringInner,ringOuter);
+        if(isPointInImage(image,finalRingPoint))
+        {
+            p_targetRings[ring-1].push_back(finalRingPoint);
+        }
     }
+}
+
+void extractAllTargetRings(const cv::Mat& bullsEyeMask, std::vector<TargetInstance>& detectedTargets, cv::Mat& p_debugMat = cv::Mat())
+{
+    bool DEBUG = true && p_debugMat.data;
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(bullsEyeMask, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+
+    // loop through detected bullsEyes
+    for(size_t i = 0; i < contours.size(); ++i)
+    {
+        // bounding Rect of possible BullsEye
+        cv::Rect bounds = cv::boundingRect(contours[i]);
+
+        // ## parameter reject too small contours (generated by refinement)
+        if(bounds.width > 150 || bounds.height > 150)
+        {
+            cv::Point center = bounds.tl() + cv::Point(bounds.width/2, bounds.height/2);
+
+            std::vector<std::vector<cv::Point>> targetRings = std::vector<std::vector<cv::Point>>();
+            //create 9 rings
+            for(int ringIdx = 0; ringIdx < 9; ++ringIdx)
+            {
+                targetRings.push_back(std::vector<cv::Point>());
+            }
+
+            clock_t startTime = clock();
+
+            // loop through points of bullsEye
+            for(size_t j = 0; j < contours[i].size(); ++j)
+            {
+                // ## Debug draw bullsEye
+                if(DEBUG)
+                {
+                    cv::circle(p_debugMat, contours[i][j],1,cv::Scalar(0,0,255),-1);
+                }
+
+                // take ony evry 8th point of the bullsEye Ring
+                if(j%8 == 0)
+                {
+                    // calc ring estimates
+                    findOnAllRings(contours[i][j], center, targetRings);
+                }
+            }
+            // store target with all rings
+            detectedTargets.push_back(TargetInstance(targetRings));
+
+            // end of profiling rings per Target
+            double elapsed = (double)(clock() - startTime);
+            double elapsed_sec =  elapsed / (double)CLOCKS_PER_SEC;
+            std::cout << "setting rings for this taget took " << elapsed_sec << " seconds." << std::endl;
+        }
+    }
+}
+
+void createRefinedBullsEyeMask(cv::Mat& p_out, std::vector<cv::Point> p_contour)
+{
+    if(p_out.dims < 2)
+	{
+        p_out = cv::Mat::zeros(image_gr.size(), CV_8UC1);
+	}
+    std::vector<std::vector<cv::Point>> contours = std::vector<std::vector<cv::Point>>();
+    contours.push_back(p_contour);
+    cv::Rect boundingRec = cv::boundingRect(contours[0]);
+    cv::Point contourCenter = cv::Point(boundingRec.tl().x + boundingRec.width/2, boundingRec.tl().y + boundingRec.height/2 );
+    for(size_t i = 0; i < contours[0].size(); ++i)
+    {
+        contours[0][i] -= contourCenter;
+        contours[0][i] *= 1.1;
+        contours[0][i] += contourCenter;
+		
+		contours[0][i].x = std::max(0,contours[0][i].x);
+		contours[0][i].y = std::max(0,contours[0][i].y);
+        contours[0][i].x = std::min(image_gr.cols,contours[0][i].x);
+        contours[0][i].y = std::min(image_gr.rows,contours[0][i].y);
+
+    }
+    boundingRec = cv::boundingRect(contours[0]);
+    contourCenter = cv::Point(boundingRec.tl().x + boundingRec.width/2, boundingRec.tl().y + boundingRec.height/2 );
+    for(size_t i = 0; i < contours[0].size(); ++i)
+    {
+        contours[0][i] -= boundingRec.tl();
+    }
+
+    cv::Mat roiImage = image_gr(boundingRec);
+    // create a mask based on coarse contour
+    cv::Mat mask = cv::Mat::zeros(roiImage.size(), CV_8UC1);
+    cv::drawContours(mask,contours,0,cv::Scalar(255),-1);
+
+    // mask out roughly detected bullsEye
+    cv::Mat thresholdImage;
+
+    roiImage.copyTo(thresholdImage,mask);
+
+    // discard bright pixels as they are not part of the bullsEye
+    // ## parameter URGENT thresh for bullsEye
+    cv::threshold(thresholdImage,thresholdImage, 100,255,CV_THRESH_BINARY_INV);
+
+	cv::Mat tmp;
+	thresholdImage.copyTo(tmp,mask);
+
+
+	// morphologic operations to get rid of clutter and to define a good circular shape
+    cv::Mat element2 = getStructuringElement( MORPH_RECT, cv::Size( 2*11 + 1, 2*11 + 1 ),
+                            cv::Point( 11, 11 ) );
+	cv::Mat element3 = getStructuringElement( MORPH_RECT, cv::Size( 2*2 + 1, 2*2 + 1 ),
+                            cv::Point( 2, 2 ) );
+	cv::erode(tmp,tmp,element3);
+    cv::dilate(tmp,tmp,element3);
+    cv::dilate(tmp,tmp,element2);
+    cv::erode(tmp,tmp,element2);
+
+    cv::Mat submat = p_out.colRange(boundingRec.x, boundingRec.x + boundingRec.width)
+                     .rowRange(boundingRec.y, boundingRec.y + boundingRec.height);
+    tmp.copyTo(submat,mask);
+
+}
+
+void detectBulletHoles(cv::Mat p_image, TargetInstance& p_target)
+{
+    cv::Rect roi = p_target.getBoundingRect();
+    cv::Mat roiImage = p_image.clone()(roi);
+
+    cv::Mat roi_gray;
+    cv::cvtColor(roiImage, roi_gray, CV_BGR2GRAY);
+
+    cv::Mat thresholdImage;
+    cv::cvtColor(roiImage, roiImage, CV_BGR2HSV);
+
+    // ## parameter HSV threshold for bulletholes
+    cv::Scalar lowerBounds = cv::Scalar(0,0,130);
+    cv::Scalar upperBounds = cv::Scalar(255,50,255);
+    cv::inRange(roiImage,lowerBounds,upperBounds,thresholdImage);
+
+    cv::Mat holeMask = cv::Mat::zeros(roiImage.size(), CV_8UC1);
+    std::vector<std::vector<cv::Point>> contours = std::vector<std::vector<cv::Point>>();
+    cv::findContours(thresholdImage, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE);
+    std::vector<std::vector<cv::Point>> bulletHoles = std::vector<std::vector<cv::Point>>();
+
+    // ## parameter bullethole
+    double maxSideLength = std::max(roi.width, roi.height);
+    double minDist = maxSideLength/22;
+    double minRad = maxSideLength/37;
+    double maxRad = 2*minRad;
+
+    for(size_t i = 0; i < contours.size(); ++i)
+    {
+        cv::Rect bounds = cv::boundingRect(contours[i]);
+        //overlapping holes can form a bigger region than maxRad
+        bool tooBig = bounds.width > roi.width/2 || bounds.height > roi.height/2;
+        bool tooSmall = bounds.width < minRad && bounds.height < minRad;
+        if(!tooSmall && !tooBig)
+        {
+            double area = cv::contourArea(contours[i]);
+            if(area >= 0.5 * bounds.area())
+            {
+                bulletHoles.push_back(contours[i]);
+            }
+       }
+    }
+
+
+    std::vector<cv::Vec3f> circles = std::vector<cv::Vec3f>();
+    for(size_t i = 0; i < bulletHoles.size(); ++i)
+    {
+        cv::Mat holeContours = cv::Mat::zeros(holeMask.size(),CV_8UC1);
+        cv::drawContours(holeMask, bulletHoles,i,cv::Scalar(255),-1);
+        cv::drawContours(holeContours, bulletHoles,i,cv::Scalar(255), 1);
+
+        cv::bitwise_not(holeContours,holeContours);
+        cv::Mat holeDistTrans;
+        cv::distanceTransform(holeContours, holeDistTrans, CV_DIST_L2, CV_DIST_MASK_PRECISE);
+
+        // TODO: use Lists instead of vectors
+        std::vector<cv::Vec3f> holeCircles = circleRANSAC(bulletHoles[i],holeDistTrans,8,30,minRad,maxRad,minDist);
+        for(auto circIter = holeCircles.begin(); circIter != holeCircles.end(); ++circIter)
+        {
+            circles.push_back(*circIter);
+        }
+    }
+
+
+    //cv::HoughCircles(holeMask,circles,CV_HOUGH_GRADIENT,1,minDist,100,8,minRad,maxRad);
+    //30,100,8,15,60
+
+    // ## Debug
+    cv::Mat debugHoleImage(holeMask.size(), CV_8UC1);
+    cv::Canny(holeMask,debugHoleImage,50,100);
+
+
+    for( size_t i = 0; i < circles.size(); i++ )
+    {
+        cv::Point samplePoint = cv::Point(cvRound(circles[i][0]), cvRound(circles[i][1]));
+
+        // discard circles with center outside of the holemask
+        if(!isPointInImage(holeMask,samplePoint))
+        {
+            continue;
+        }
+
+        unsigned char sampleVal = holeMask.at<unsigned char>(samplePoint.y, samplePoint.x);
+        if( sampleVal == 255 )
+        {
+            p_target.addBulletHole(circles[i]);
+
+            // ## Debug
+            cv::Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+            int radius = cvRound(circles[i][2]);
+            // circle center
+            cv::circle( debugHoleImage, center, 3, cv::Scalar(180,255,0), -1, 8, 0 );
+            // circle outline
+            cv::circle( debugHoleImage, center, radius, cv::Scalar(180,0,255), 1, 8, 0 );
+        }
+
+    }
+
+
+
+
+
+//	cv::Mat previttImage;
+//	previtt(roi_gray, previttImage);
+//    processImage_Sobel(roi_gray,previttImage);
+
 }
 
 void drawTargets(cv::Mat& p_drawOn, std::vector<TargetInstance> p_targets)
 {
-    for(int i = 0; i < p_targets.size(); ++i)
+    for(size_t i = 0; i < p_targets.size(); ++i)
     {
 
         cv::circle(p_drawOn, p_targets[i].getCenter(), 5, cv::Scalar(255,0,0),-1);
@@ -497,7 +721,7 @@ void drawTargets(cv::Mat& p_drawOn, std::vector<TargetInstance> p_targets)
             }
         }*/
         std::vector<cv::RotatedRect> ringEllipses = p_targets[i].getRingEllipses();
-        for(int j = 0; j < ringEllipses.size(); ++j)
+        for(size_t j = 0; j < ringEllipses.size(); ++j)
         {
             cv::Scalar color = cv::Scalar(180,0,0);
             /*switch(j)
@@ -520,26 +744,25 @@ void drawTargets(cv::Mat& p_drawOn, std::vector<TargetInstance> p_targets)
         }
 
 		std::vector<cv::Vec4f> holes = p_targets[i].getBulletHoles();
-		for(int j = 0; j < holes.size(); ++j)
+        for(size_t j = 0; j < holes.size(); ++j)
 		{
 			cv::Vec4f hole = holes[j]; 
+            // vector from center to holeCenter
 			cv::Point2f dist = cv::Point2f(hole[0], hole[1]) - cv::Point2f(p_targets[i].getCenter());
 			float distLength = cv::norm(dist);
 			dist.x /= distLength;
 			dist.y /= distLength;
 			float debugDistL = cv::norm(dist);
 			float sclaeToCenter = std::min(distLength, hole[2]);
-			cv::Point closestToCenter = cv::Point(hole[0], hole[1]) - cv::Point(dist * sclaeToCenter);
+            cv::Point holeCenter = cv::Point(cvRound(holes[j][0]), cvRound(holes[j][1]));
+            cv::Point closestToCenter = holeCenter - cv::Point(dist * sclaeToCenter);
 
-
-			
-			cv::Point center = cv::Point(holes[j][0], holes[j][1]);
 			cv::Scalar color(255,0,255);
-			cv::circle(p_drawOn,center,holes[j][2],color,-1);
+            cv::circle(p_drawOn,holeCenter,cvRound(holes[j][2]),color,-1);
 			cv::circle(p_drawOn,closestToCenter,1,cv::Scalar(255,255,0),-1);
 			float sc = holes[j][3];
 			std::string score = cv::format("%.1f",sc);
-			cv::putText(p_drawOn,score,center /*- cv::Point(holes[j][2],holes[j][2])*/,CV_FONT_HERSHEY_DUPLEX,0.9,cv::Scalar(0,0,0),2);
+            cv::putText(p_drawOn,score,holeCenter /*- cv::Point(holes[j][2],holes[j][2])*/,CV_FONT_HERSHEY_DUPLEX,0.9,cv::Scalar(0,0,0),2);
 		}
     }
 }
@@ -562,109 +785,6 @@ void processImage_Sobel(cv::Mat p_image, cv::Mat& p_out)
     /// Total Gradient (approximate)
     cv::addWeighted( abs_grad_x, 0.5, abs_grad_y, 0.5, 0, p_out );
 
-
-}
-
-void detectBulletHoles(cv::Mat p_image, TargetInstance& p_target)
-{
-    cv::Rect roi = p_target.getBoundingRect();
-    cv::Mat roiImage = p_image.clone()(roi);
-
-	cv::Mat roi_gray;
-	cv::cvtColor(roiImage, roi_gray, CV_BGR2GRAY);
-
-    cv::Mat thresholdImage;
-    cv::cvtColor(roiImage, roiImage, CV_BGR2HSV);
-
-	// ## parameter HSV threshold for bulletholes
-    cv::Scalar lowerBounds = cv::Scalar(0,0,130);
-    cv::Scalar upperBounds = cv::Scalar(255,50,255);
-    cv::inRange(roiImage,lowerBounds,upperBounds,thresholdImage);
-
-	cv::Mat holeMask = cv::Mat::zeros(roiImage.size(), CV_8UC1);
-    std::vector<std::vector<cv::Point>> contours = std::vector<std::vector<cv::Point>>();
-    cv::findContours(thresholdImage, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE);
-    std::vector<std::vector<cv::Point>> bulletHoles = std::vector<std::vector<cv::Point>>();
-
-    // ## parameter bullethole
-	double maxSideLength = std::max(roi.width, roi.height);
-	double minDist = maxSideLength/22;
-	double minRad = maxSideLength/37;
-	double maxRad = 2*minRad;
-	
-	for(int i = 0; i < contours.size(); ++i)
-    {
-        cv::Rect bounds = cv::boundingRect(contours[i]);
-		//overlapping holes can form a bigger region than maxRad
-		bool tooBig = bounds.width > roi.width/2 || bounds.height > roi.height/2;
-		bool tooSmall = bounds.width < minRad && bounds.height < minRad;
-		if(!tooSmall && !tooBig)
-        {
-            double area = cv::contourArea(contours[i]);
-            if(area >= 0.5 * bounds.area())
-            {
-                bulletHoles.push_back(contours[i]);
-            }
-       }
-    }
-
-
-	std::vector<cv::Vec3f> circles = std::vector<cv::Vec3f>();
-    for(int i = 0; i < bulletHoles.size(); ++i)
-    {
-		cv::Mat holeContours = cv::Mat::zeros(holeMask.size(),CV_8UC1);
-        cv::drawContours(holeMask, bulletHoles,i,cv::Scalar(255),-1);
-		cv::drawContours(holeContours, bulletHoles,i,cv::Scalar(255), 1);
-
-		cv::bitwise_not(holeContours,holeContours);
-		cv::Mat holeDistTrans;
-		cv::distanceTransform(holeContours, holeDistTrans, CV_DIST_L2, CV_DIST_MASK_PRECISE);
-
-		// TODO: use Lists instead of vectors
-		std::vector<cv::Vec3f> holeCircles = circleRANSAC(bulletHoles[i],holeDistTrans,10,30,minRad,maxRad,minDist);
-		for(auto circIter = holeCircles.begin(); circIter != holeCircles.end(); ++circIter)
-		{
-			circles.push_back(*circIter);
-		}
-	}
-
-    
-    //cv::HoughCircles(holeMask,circles,CV_HOUGH_GRADIENT,1,minDist,100,8,minRad,maxRad);
-	//30,100,8,15,60
-	
-	// ## Debug
-	cv::Mat debugHoleImage(holeMask.size(), CV_8UC1);
-	cv::Canny(holeMask,debugHoleImage,50,100);
-
-
-    for( size_t i = 0; i < circles.size(); i++ )
-    {
-		cv::Point samplePoint = cv::Point(circles[i][0], circles[i][1]); 
-		//samplePoint -= roi.tl();
-		unsigned char sampleVal = holeMask.at<unsigned char>(samplePoint.y, samplePoint.x);
-		if( sampleVal == 255 )
-		{
-			//holeMask.at<unsigned char>(samplePoint.x, samplePoint.y) = 120;
-			p_target.addBulletHole(circles[i]);
-
-			// ## Debug
-			cv::Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
-			int radius = cvRound(circles[i][2]);
-			// circle center
-			cv::circle( debugHoleImage, center, 3, cv::Scalar(180,255,0), -1, 8, 0 );
-			// circle outline
-			cv::circle( debugHoleImage, center, radius, cv::Scalar(180,0,255), 1, 8, 0 );
-		}
-        
-    }
-
-
-
-
-
-//	cv::Mat previttImage;
-//	previtt(roi_gray, previttImage);
-//    processImage_Sobel(roi_gray,previttImage);
 
 }
 
@@ -711,69 +831,10 @@ int main(int argc, char** argv )
         }
 
         std::vector<TargetInstance> detectedTargets = std::vector<TargetInstance>();
-
-        // ######   COARSE      ##############
-        const double downSampleFac = 0.1;
-
-        cv::Mat prewitt;
-        cv::Mat downSampledImage;
-        cv::cvtColor(image,image_gr,CV_BGR2GRAY);
-        cv::resize(image_gr,downSampledImage,cv::Size(0,0), downSampleFac, downSampleFac);
-        previtt(downSampledImage, prewitt);
-		
-		std::vector<std::vector<cv::Point>> contours;
-		cv::findContours(prewitt, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
-        
-		// ## Debug for contours at small resolution
-		cv::Mat conts = downSampledImage.clone();
-		
-		// ## Debug for contours resized to full resolution
-        cv::Mat resizedConts = image_gr.clone();
-        cv::cvtColor(resizedConts,resizedConts,CV_GRAY2BGR);
-
-        //TODO: replace with counter
         std::vector<std::vector<cv::Point>> coarseBullsEyes = std::vector<std::vector<cv::Point>>();
 
-        cv::Mat tmp;
-
-        // ####     COARSE POSTPOCESS    ####
-
-		for(int i = 0; i < contours.size(); ++i)
-		{
-			cv::Rect r = cv::boundingRect(contours[i]);
-
-			// ## parameter discard small contours
-			bool bigEnough = r.width >= 20 && r.height >= 20;
-			bool biggerCont = contours[i].size() >= 70;
-			if(bigEnough && biggerCont )
-			{
-                // test if contour is a BullsEye
-				if(evaluateFirstCondition(downSampledImage,contours[i]) && evaluateSecondCondition(r))
-                {
-                    for(int j = 0; j < contours[i].size(); ++j)
-                    {
-                        // ## Debug draw coarse contours on coarse image
-                        cv::circle(conts,contours[i][j],1,cv::Scalar(0,0,255),-1);
-
-						contours[i][j].x *= 1/downSampleFac;
-						contours[i][j].y *= 1/downSampleFac;
-
-
-
-                        // ## Debug draw coarse contours on highres image
-                        cv::circle(resizedConts, contours[i][j],10,cv::Scalar(0,255,0),-1);
-                    }
-                    coarseBullsEyes.push_back(contours[i]);
-
-                    clock_t start = clock();
-                    refineBullsEyes(tmp, contours[i]);
-					// end of profiling
-                    double elapsed = (double)(clock() - start);
-                    double elapsed_sec =  elapsed / (double)CLOCKS_PER_SEC;
-                    std::cout << "refinement took  " << elapsed_sec << " seconds." << std::endl;
-                }
-			}
-		}
+        clock_t start = clock();
+        findCoarseBullsEyes(coarseBullsEyes);
 
         if(coarseBullsEyes.empty())
         {
@@ -783,64 +844,43 @@ int main(int argc, char** argv )
             continue;
         }
 
+        cv::Mat bullsEyeMask = cv::Mat::zeros(image_gr.size(), CV_8UC1);
+        cv::Mat outPutImage = image.clone();
+        //cv::cvtColor(outPutImage,outPutImage,CV_GRAY2BGR);
+        for(size_t i = 0; i < coarseBullsEyes.size(); ++i)
+        {
+           createRefinedBullsEyeMask(bullsEyeMask, coarseBullsEyes[i]);
+        }
+
         if(false)
         {
             // ## Debug show the generated mask
-            show("mask", tmp,0.3);
+            show("mask", bullsEyeMask,0.3);
         }
 
+        extractAllTargetRings(bullsEyeMask, detectedTargets, outPutImage);
 
-        // #########    REFINE POSTPROCESS      ##########
-		contours.clear();
-		cv::findContours(tmp, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+		// end of profiling all rings of all targets
+        double elapsed = (double)(clock() - start);
+        double elapsed_sec =  elapsed / (double)CLOCKS_PER_SEC;
+        std::cout << "finding all rings took  " << elapsed_sec << " seconds." << std::endl;
 
-        // loop through detected bullsEyes
-		for(int i = 0; i < contours.size(); ++i)
-		{
-            // bounding Rect of possible BullsEye
-            cv::Rect bounds = cv::boundingRect(contours[i]);
-
-            // ## parameter reject too small contours (generated by refinement)
-            if(bounds.width > 150 || bounds.height > 150)
-			{
-                cv::Point center = bounds.tl() + cv::Point(bounds.width/2, bounds.height/2);
-
-                std::vector<std::vector<cv::Point>> targetRings = std::vector<std::vector<cv::Point>>();
-                //create 9 rings
-                for(int ringIdx = 0; ringIdx < 9; ++ringIdx)
-                {
-                    targetRings.push_back(std::vector<cv::Point>());
-                }
-
-				// loop through points of bullsEye
-                for(int j = 0; j < contours[i].size(); ++j)
-				{
-                    // ## Debug draw bullsEye
-					cv::circle(resizedConts, contours[i][j],1,cv::Scalar(0,0,255),-1);
-
-
-                    if(j%8 == 0)
-                    {
-                        // calc ring estimates
-                        findOnAllRings(i, contours, j, center, targetRings);
-                    }
-				}
-                // store target with all rings
-                detectedTargets.push_back(TargetInstance(targetRings));
-			}  
-		}
-
-
-        for(int i = 0; i < detectedTargets.size(); ++i)
+		start = clock();
+        for(size_t i = 0; i < detectedTargets.size(); ++i)
         {
             detectBulletHoles(image,detectedTargets[i]);
         }
 
-		drawTargets(resizedConts, detectedTargets);
-		
+		// end of profiling holedetection
+        elapsed = (double)(clock() - start);
+        elapsed_sec =  elapsed / (double)CLOCKS_PER_SEC;
+        std::cout << "finding all holes took  " << elapsed_sec << " seconds." << std::endl;
+
+        drawTargets(outPutImage, detectedTargets);
+
         //show("prewittC", conts, 1);
-        drawImageNr(resizedConts, imageLoader.getIndex(), imageLoader.getMaxIndex());
-        show("conts", resizedConts,0.3);
+        drawImageNr(outPutImage, imageLoader.getIndex(), imageLoader.getMaxIndex());
+        show("conts", outPutImage,0.3);
 
         keyboard = waitKey();
 
