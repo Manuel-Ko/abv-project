@@ -6,7 +6,7 @@
 #include <iostream>
 #define _USE_MATH_DEFINES
 #include <math.h>
-#include "templatematch.h"
+#include "myImageProcessing.h"
 
 
 class TargetInstance

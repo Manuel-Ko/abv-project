@@ -15,13 +15,6 @@ class TargetFinder
 public:
     TargetFinder();
 
-    static const bool DRAW_RINGLINES = false;
-    static const bool DRAW_BULLERHOLES = false;
-    static const bool DRAW_RINGPOINTS = true;
-    static const bool SHOW_HOLESEGMENTATION = true;
-    static const bool SHOW_COARSEDETECTION = true;
-
-
     cv::Mat getImage() const;
     void setImage(const cv::Mat &image);
 
@@ -36,6 +29,16 @@ public:
 
 
 private:
+
+    static const bool DRAW_RINGLINES = true;
+    static const bool DRAW_BULLERHOLES = true;
+    static const bool DRAW_RINGPOINTS = true;
+    static const bool SHOW_HOLESEGMENTATION = true;
+    static const bool SHOW_COARSEDETECTION = true;
+    static const cv::Size SHOW_WINDOWSIZE;
+    float SHOW_SCALE;
+
+
     cv::Mat m_image;
     cv::Mat m_image_gray;
 

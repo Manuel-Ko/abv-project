@@ -14,6 +14,27 @@ namespace myImProc
         cv::imshow(p_windowName, p_image);
     }
 
+    void show(const char* p_windowName,cv::Mat p_image, cv::Size p_size)
+    {
+        if(p_image.cols <= 0 && p_image.rows <= 0)
+        {
+            std::cerr << "cant show an empty image" << std::endl;
+            return;
+        }
+        cv::namedWindow(p_windowName, CV_WINDOW_KEEPRATIO);
+        cv::resizeWindow(p_windowName,p_size.width, p_size.height);
+        cv::imshow(p_windowName, p_image);
+    }
+
+
+	bool pointsAreCollinear(cv::Point a, cv::Point b, cv::Point c)
+	{
+		cv::Point ab = a-b;
+		cv::Point bc = b-c;
+		double det = ab.x * bc.y - bc.x * ab.y;
+		return det < 0.0001 && det > -0.0001;
+	}
+
 
     void processImage_Sobel(cv::Mat p_image, cv::Mat& p_out)
     {
@@ -75,7 +96,7 @@ namespace myImProc
         }
 
         cv::addWeighted( abs_horTmp, 0.5, abs_vertTmp, 0.5, 0, dst );
-        cv::threshold(dst,dst,120,255,CV_THRESH_TOZERO);
+        cv::threshold(dst,dst,100,255,CV_THRESH_TOZERO);
 
     }
 
@@ -110,13 +131,19 @@ namespace myImProc
         float centerY = -1 * thirdDet/(2*firstDet);
         float radius = sqrt(secondDet*secondDet + thirdDet*thirdDet - 4 * firstDet * fourthDet)/(2*abs(firstDet));
 
+		if(cvIsNaN(radius))
+		{
+			std::cout << "dont get here!";
+		}
+
         return cv::Vec3f(centerX, centerY, radius);
     }
+
 
     std::vector<cv::Vec3f> circleRANSAC(const std::vector<cv::Point>& p_points, const cv::Mat& p_distanceImage,
                                         float p_threshold , size_t p_iterations, float p_minRad, float p_maxRad, float p_minDist)
     {
-        const bool DEBUG = true;
+        const bool DEBUG = false;
         std::vector<cv::Vec3f> out = std::vector<cv::Vec3f>();
         std::vector<float> meanDists = std::vector<float>();
 
@@ -140,9 +167,46 @@ namespace myImProc
                 }while(match);
             }
 
-            cv::Vec3f circ = calcCircle(p_points[index[0]], p_points[index[1]], p_points[index[2]]);
+			cv::Point a = p_points[index[0]];
+			cv::Point b = p_points[index[1]];
+			cv::Point c = p_points[index[2]];
+
+			// ## Debug
+            cv::Mat debugImg;
+			if(DEBUG)
+			{
+				cv::threshold(p_distanceImage,debugImg,0,255,CV_THRESH_BINARY_INV);
+				cv::cvtColor(debugImg,debugImg, CV_GRAY2BGR);
+				// Points to generate the circle
+				cv::Scalar rndColor = cv::Scalar(0,0,255);
+				cv::line(debugImg,p_points[index[0]], p_points[index[0]], rndColor);
+				cv::line(debugImg,p_points[index[1]], p_points[index[1]], rndColor);
+				cv::line(debugImg,p_points[index[2]], p_points[index[2]], rndColor);
+			}
+			
+
+            cv::Vec3f circ = calcCircle(a, b, c);
             int radius = cvRound(circ[2]);
-            cv::Point circleCenter(cvRound(circ[0]), cvRound(circ[1]));
+			cv::Point circleCenter(cvRound(circ[0]), cvRound(circ[1]));
+
+			//TODO: avoid negative radi
+			if(radius < 0)
+			{
+				continue;
+			}
+			
+			if(DEBUG)
+            {
+                
+                cv::circle(debugImg,circleCenter, radius, cv::Scalar(255,0,0),1);
+                cv::circle(debugImg,circleCenter, 2, cv::Scalar(255,0,0),-1);
+                cv::Scalar rndColor = cv::Scalar(0,0,255);
+
+                // Points to generate the circle
+                cv::line(debugImg,p_points[index[0]], p_points[index[0]], rndColor);
+                cv::line(debugImg,p_points[index[1]], p_points[index[1]], rndColor);
+                cv::line(debugImg,p_points[index[2]], p_points[index[2]], rndColor);
+            }
 
             bool tooSmall = radius < p_minRad;
             bool tooBig = radius > p_maxRad;
@@ -171,22 +235,6 @@ namespace myImProc
                     }
                      *p++;
                 }
-            }
-
-            // ## Debug
-            cv::Mat debugImg;
-            if(DEBUG)
-            {
-                cv::threshold(p_distanceImage,debugImg,0,255,CV_THRESH_BINARY_INV);
-                cv::cvtColor(debugImg,debugImg, CV_GRAY2BGR);
-                cv::circle(debugImg,circleCenter, radius, cv::Scalar(255,0,0),1);
-                cv::circle(debugImg,circleCenter, 2, cv::Scalar(255,0,0),-1);
-                cv::Scalar rndColor = cv::Scalar(0,0,255);
-
-                // Points to generate the circle
-                cv::line(debugImg,p_points[index[0]], p_points[index[0]], rndColor);
-                cv::line(debugImg,p_points[index[1]], p_points[index[1]], rndColor);
-                cv::line(debugImg,p_points[index[2]], p_points[index[2]], rndColor);
             }
 
             float distSum = 0;

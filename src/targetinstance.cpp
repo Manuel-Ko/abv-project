@@ -56,6 +56,7 @@ void TargetInstance::setRings(std::vector<std::vector<cv::Point>> p_rings)
         //fit Ellipse with OpenCV (least squares)
         m_ringEllipses.push_back(cv::fitEllipse(m_rings[i]));
 
+
         //TODO: use RANSAC to fit Ellipse to weaken influence of multiple outliers
 
         //fit Ellipse with RANSAC

@@ -7,6 +7,7 @@
 namespace myImProc
 {
     void show(const char* p_windowName,cv::Mat p_image, float p_size);
+    void show(const char* p_windowName,cv::Mat p_image, cv::Size p_size);
     void processImage_Sobel(cv::Mat p_image, cv::Mat& p_out);
 //    void CannyThreshold(cv::Mat &p_image_gray);
     void previtt(const cv::Mat& p_image, cv::Mat& dst);
