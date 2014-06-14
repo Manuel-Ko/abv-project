@@ -8,7 +8,7 @@
 int keyboard = 0;
 
 float SHOW_SCALE = 1;
-const cv::Size SHOW_SIZE = cv::Size(1238,697);
+const cv::Size SHOW_SIZE = cv::Size(1920,1080);
 
 int main(int argc, char** argv )
 {
@@ -62,6 +62,7 @@ int main(int argc, char** argv )
         std::vector<TargetInstance> detectedTargets = std::vector<TargetInstance>();
 
         clock_t startTime = clock();
+		clock_t startAll = startTime;
 
         targetFinder.findCoarseBullsEyes(coarseBullsEyes,image.clone());
 
@@ -71,7 +72,7 @@ int main(int argc, char** argv )
 
         startTime = clock();
 
-        targetFinder.extractAllTargetRings(coarseBullsEyes, image.clone());
+        targetFinder.extractAllTargetRings(coarseBullsEyes, image);
 
         elapsed = (double)(clock() - startTime);
         elapsed_sec =  elapsed / (double)CLOCKS_PER_SEC;
@@ -81,15 +82,21 @@ int main(int argc, char** argv )
 
         targetFinder.detectAllBulletHoles();
 
-        elapsed = (double)(clock() - startTime);
+        double endTime = clock();
+		elapsed = (double)(endTime - startTime);
         elapsed_sec =  elapsed / (double)CLOCKS_PER_SEC;
         std::cout << "detecting bulletholes took " << elapsed_sec << " seconds." << std::endl;
 
+		double elapsedAll = (double)(endTime - startAll);
+        elapsed_sec =  elapsedAll / (double)CLOCKS_PER_SEC;
+        std::cout << "Processing Image took " << elapsed_sec << " seconds." << std::endl;
+		
 
         detectedTargets = targetFinder.getTargets();
         targetFinder.drawTargets(image);
 
         myImProc::show("result", image, SHOW_SCALE);
+		//cv::imwrite("Ringdetection.jpg", image);
 
 
         keyboard = cv::waitKey();

@@ -56,6 +56,11 @@ void TargetInstance::setRings(std::vector<std::vector<cv::Point>> p_rings)
         //fit Ellipse with OpenCV (least squares)
         m_ringEllipses.push_back(cv::fitEllipse(m_rings[i]));
 
+		if(i == 0)
+		{
+			m_center = m_ringEllipses[0].center;
+		}
+
 
         //TODO: use RANSAC to fit Ellipse to weaken influence of multiple outliers
 
@@ -81,12 +86,15 @@ void TargetInstance::setRings(std::vector<std::vector<cv::Point>> p_rings)
 
 void TargetInstance::addBulletHole(cv::Vec3f p_hole)
 {
+	const bool DEBUG = true;
+	cv::Rect debugRoi;
+    cv::Mat debug;
+
 	p_hole += cv::Vec3f(m_bounds.tl().x, m_bounds.tl().y);  
 	cv::Point2f dist = cv::Point2f(p_hole[0], p_hole[1]) - cv::Point2f(m_center);
 	float distLength = cv::norm(dist);
 	dist.x /= distLength;
 	dist.y /= distLength;
-	float debugDistL = cv::norm(dist);
 	float sclaeToCenter = std::min(distLength, p_hole[2]);
 	cv::Point closestToCenter = cv::Point(p_hole[0], p_hole[1]) - cv::Point(dist * sclaeToCenter);
 
@@ -96,15 +104,18 @@ void TargetInstance::addBulletHole(cv::Vec3f p_hole)
         cv::RotatedRect rotRec = m_ringEllipses[i];
         float majAxLen = 0;
         float minAxLen = 0;
+        float majAxOff = 0;
         if(rotRec.size.width >= rotRec.size.height)
         {
             majAxLen = rotRec.size.width;
             minAxLen = rotRec.size.height;
+            majAxOff = 0;
         }
         else
         {
             majAxLen = rotRec.size.height;
             minAxLen = rotRec.size.width;
+            majAxOff = 90;
         }
 
         // check for 10
@@ -121,15 +132,29 @@ void TargetInstance::addBulletHole(cv::Vec3f p_hole)
             }
         }
 
-		float fLength = sqrt(majAxLen/2 * majAxLen/2 - minAxLen/2 * minAxLen/2);
-		float alpha = rotRec.angle;
-		alpha *= M_PI/180 * -1;
-		cv::Matx22f rotate (cos(alpha),sin(alpha),
-							-sin(alpha), cos(alpha));
-		cv::Matx21f vec(1,0);
+        float fLength = sqrt(majAxLen/2 * majAxLen/2 - minAxLen/2 * minAxLen/2);
+        float alpha = (rotRec.angle + majAxOff) * M_PI/180 * -1;
+        cv::Matx22f rotate (cos(alpha),sin(alpha),
+                            -sin(alpha), cos(alpha));
+        cv::Matx21f vec(1,0);
 		vec = rotate * vec;
 		vec *= fLength;
 		cv::Point vecP = cv::Point(vec(0,0),vec(1,0));
+
+		if(DEBUG)
+		{
+			debugRoi = rotRec.boundingRect() + cv::Size(200,200);
+			debug = cv::Mat(debugRoi.size(), CV_8UC3);
+			cv::Point offset = cv::Point(100,100);
+			cv::Point2f vertices[4];
+			rotRec.points(vertices);
+			for (int i = 0; i < 4; i++)
+			{
+				cv::line(debug, cv::Point(vertices[i])- rotRec.boundingRect().tl() + offset, cv::Point(vertices[(i+1)%4])- rotRec.boundingRect().tl() + offset, cv::Scalar(0,255,0));
+			}
+			cv::line(debug, cv::Point(rotRec.center) - rotRec.boundingRect().tl() + offset, cv::Point(rotRec.center) + vecP - rotRec.boundingRect().tl() + offset, cv::Scalar(255,0,0),1);
+		}
+
 		cv::Point f1 = cv::Point(rotRec.center) + vecP;
 		cv::Point f2 = cv::Point(rotRec.center) - vecP;
 
@@ -137,24 +162,27 @@ void TargetInstance::addBulletHole(cv::Vec3f p_hole)
         float dist2 = cv::norm(f2 - closestToCenter);
 
         // ## Debug
-		std::vector<cv::Point> ellipse;
-		cv::Rect debugRoi = rotRec.boundingRect() + cv::Size(200,200);
-		cv::Point offset = cv::Point(100,100);
-		cv::ellipse2Poly(rotRec.center,cv::Size(rotRec.size.width/2, rotRec.size.height/2), rotRec.angle,0,360,5,ellipse);
-		for(int j = 0; j < ellipse.size(); ++j)
+		if(DEBUG)
 		{
-			ellipse[j] = ellipse[j] - debugRoi.tl() + offset;
+			std::vector<cv::Point> ellipse;
+			//cv::Rect debugRoi = rotRec.boundingRect() + cv::Size(200,200);
+			cv::Point offset = cv::Point(100,100);
+			cv::ellipse2Poly(rotRec.center,cv::Size(rotRec.size.width/2, rotRec.size.height/2), rotRec.angle,0,360,5,ellipse);
+			for(int j = 0; j < ellipse.size(); ++j)
+			{
+				ellipse[j] = ellipse[j] - debugRoi.tl() + offset;
+			}
+
+			std::vector<std::vector<cv::Point>> ellipse2 = std::vector<std::vector<cv::Point>>();
+			ellipse2.push_back(ellipse);
+			cv::polylines(debug,ellipse2,true,cv::Scalar(255,0,255),1);
+			cv::circle(debug,f1 - debugRoi.tl() + offset,2,cv::Scalar(0,0,255),-1);
+			cv::circle(debug,f2 - debugRoi.tl() + offset,2,cv::Scalar(0,255,255),-1);
+			cv::Point holeCenter = cv::Point(p_hole[0],p_hole[1]) - debugRoi.tl() + offset;
+			cv::circle(debug, holeCenter ,p_hole[2],cv::Scalar(0,120,255));
+			cv::Point debugPoint = closestToCenter - debugRoi.tl() + offset;
+			cv::circle(debug,debugPoint,2,cv::Scalar(255,255,0),-1);
 		}
-		cv::Mat debug = cv::Mat(debugRoi.size(), CV_8UC3);
-		std::vector<std::vector<cv::Point>> ellipse2 = std::vector<std::vector<cv::Point>>();
-		ellipse2.push_back(ellipse);
-		cv::polylines(debug,ellipse2,true,cv::Scalar(255,0,255),1);
-		cv::circle(debug,f1 - debugRoi.tl() + offset,2,cv::Scalar(0,0,255),-1);
-		cv::circle(debug,f2 - debugRoi.tl() + offset,2,cv::Scalar(0,255,255),-1);
-		cv::Point holeCenter = cv::Point(p_hole[0],p_hole[1]) - debugRoi.tl() + offset;
-		cv::circle(debug, holeCenter ,p_hole[2],cv::Scalar(0,120,255));
-		cv::Point debugPoint = closestToCenter - debugRoi.tl() + offset;
-        cv::circle(debug,debugPoint,2,cv::Scalar(255,0,255),-1);
 
         if(dist1 + dist2 <= majAxLen)
         {

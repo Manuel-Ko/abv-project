@@ -21,7 +21,7 @@ public:
     cv::Mat getImage_gray() const;
     std::vector<TargetInstance> getTargets() const;
 
-    void findCoarseBullsEyes(std::vector<std::vector<cv::Point>>& coarseBullsEyes, cv::Mat p_debugImage = cv::Mat());
+    void findCoarseBullsEyes(std::vector<std::vector<cv::Point>>& coarseBullsEyes, cv::Mat& p_debugImage = cv::Mat());
     void extractAllTargetRings(const std::vector<std::vector<cv::Point>>& coarseBullsEyes, cv::Mat& p_debugMat = cv::Mat());
     void detectAllBulletHoles();
 
@@ -30,9 +30,10 @@ public:
 
 private:
 
-    static const bool DRAW_RINGLINES = true;
+    static const bool DRAW_RINGLINES = false;
+	static const bool DRAW_RINGPOINTS = false;
+	static const bool DRAW_BULLSEYES = true;
     static const bool DRAW_BULLERHOLES = true;
-    static const bool DRAW_RINGPOINTS = true;
     static const bool SHOW_HOLESEGMENTATION = true;
     static const bool SHOW_COARSEDETECTION = true;
     static const cv::Size SHOW_WINDOWSIZE;

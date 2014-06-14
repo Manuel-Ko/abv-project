@@ -6,7 +6,7 @@
 
 
 cv::Mat image = cv::Mat::zeros(cv::Size(800,800), CV_8UC3);
-cv::RotatedRect rotRec = cv::RotatedRect(cv::Point(255,255),cv::Size(46,51),40);
+cv::RotatedRect rotRec = cv::RotatedRect(cv::Point(255,255),cv::Size(100,328.5),23);
 std::vector<cv::Point> ellipse;
 
 
@@ -14,39 +14,52 @@ void something()
 {
     float majAxLen = 0;
     float minAxLen = 0;
+	float majAxOff = 0;
     if(rotRec.size.width >= rotRec.size.height)
     {
         majAxLen = rotRec.size.width;
         minAxLen = rotRec.size.height;
+		majAxOff = 0;
     }
     else
     {
         majAxLen = rotRec.size.height;
         minAxLen = rotRec.size.width;
+		majAxOff = 90;
     }
 
 	float fLength = sqrt(majAxLen/2 * majAxLen/2 - minAxLen/2 * minAxLen/2);
-    float alpha = rotRec.angle;
-	alpha *= M_PI/180 * -1;
+    float alpha = (rotRec.angle + majAxOff) * M_PI/180 * -1;
     cv::Matx22f rotate (cos(alpha),sin(alpha),
                         -sin(alpha), cos(alpha));
     cv::Matx21f vec(1,0);
+
+	cv::Rect debugRoi = rotRec.boundingRect();
+	cv::Mat debug = cv::Mat(debugRoi.size(), CV_8UC3);
+	cv::Point vecP = cv::Point(vec(0,0),vec(1,0));
+	cv::Point2f vertices[4];
+	rotRec.points(vertices);
+	for (int i = 0; i < 4; i++)
+		cv::line(debug, cv::Point(vertices[i])- rotRec.boundingRect().tl(), cv::Point(vertices[(i+1)%4])- rotRec.boundingRect().tl(), cv::Scalar(0,255,0));
+
+
     vec = rotate * vec;
 	vec *= fLength;
-    cv::Point vecP = cv::Point(vec(0,0),vec(1,0));
+    vecP = cv::Point(vec(0,0),vec(1,0));
+	cv::line(debug, cv::Point(rotRec.center) - rotRec.boundingRect().tl(), cv::Point(rotRec.center) + vecP - rotRec.boundingRect().tl(), cv::Scalar(255,0,0),1);
     cv::Point f1 = cv::Point(rotRec.center) + vecP;
     cv::Point f2 = cv::Point(rotRec.center) - vecP;
 
     /*float dist1 = cv::norm(f1 - closestToCenter);
     float dist2 = cv::norm(f2 - closestToCenter);*/
 
-	cv::Rect debugRoi = rotRec.boundingRect();
+	
 	cv::ellipse2Poly(rotRec.center,cv::Size(rotRec.size.width/2, rotRec.size.height/2), rotRec.angle,0,360,5,ellipse);
     for(int i = 0; i < ellipse.size(); ++i)
     {
         ellipse[i] -= debugRoi.tl();
     }
-    cv::Mat debug = cv::Mat(debugRoi.size(), CV_8UC3);
+   
     std::vector<std::vector<cv::Point>> ellipse2 = std::vector<std::vector<cv::Point>>();
     ellipse2.push_back(ellipse);
     cv::polylines(debug,ellipse2,true,cv::Scalar(255,0,255),1);
@@ -101,14 +114,14 @@ cv::Vec3f calcCircle2(cv::Point2f a, cv::Point2f b, cv::Point2f c)
 
 int main(int argc, char** argv )
 {
-    /*something();
+    something();
 	std::vector<std::vector<cv::Point>> ellipse2 = std::vector<std::vector<cv::Point>>();
     ellipse2.push_back(ellipse);
 	cv::polylines(image,ellipse2,true,cv::Scalar(255,0,255),1);
 	cv::rectangle(image,rotRec.boundingRect() - rotRec.boundingRect().tl() ,cv::Scalar(0,255,0),1);
-    cv::ellipse(image, rotRec, cv::Scalar(255,0,0));*/
+    cv::ellipse(image, rotRec, cv::Scalar(255,0,0));
 
-	cv::Point p1(230,310);
+	/*cv::Point p1(230,310);
 	cv::Point p2(600,450);
 	cv::Point p3(790,266);
 
@@ -117,7 +130,7 @@ int main(int argc, char** argv )
 
 	cv::circle(image, p1, 2, cv::Scalar(255,0,0),-1);
 	cv::circle(image, p2, 2, cv::Scalar(0,255,0),-1);
-	cv::circle(image, p3, 2, cv::Scalar(0,0,255),-1);
+	cv::circle(image, p3, 2, cv::Scalar(0,0,255),-1);*/
 
 	
 
