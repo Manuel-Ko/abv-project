@@ -30,12 +30,12 @@ public:
 
 private:
 
-    static const bool DRAW_RINGLINES = false;
-	static const bool DRAW_RINGPOINTS = false;
-	static const bool DRAW_BULLSEYES = true;
-    static const bool DRAW_BULLERHOLES = true;
-    static const bool SHOW_HOLESEGMENTATION = true;
-    static const bool SHOW_COARSEDETECTION = true;
+    static const bool DRAW_RINGLINES = true;
+	static const bool DRAW_RINGPOINTS = true;
+	static const bool DRAW_BULLSEYES = false;
+    static const bool DRAW_BULLERHOLES = false;
+    static const bool SHOW_HOLESEGMENTATION = false;
+    static const bool SHOW_COARSEDETECTION = false;
     static const cv::Size SHOW_WINDOWSIZE;
     float SHOW_SCALE;
 

@@ -23,7 +23,7 @@ int main(int argc, char** argv )
 
     cv::Mat image = imageLoader.getCurrentImage();
 
-    SHOW_SCALE = SHOW_SIZE.width/(float)image.cols;
+    SHOW_SCALE = SHOW_SIZE.height/(float)image.rows;
 
     TargetFinder targetFinder = TargetFinder();
     targetFinder.setImage(image.clone());

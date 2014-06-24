@@ -48,7 +48,8 @@ bool TargetFinder::evaluateFirstCondition_Point(cv::Mat p_image, cv::Point p_poi
     double result = 0;
     double garbage = 0;
     cv::minMaxIdx(roiMat,&garbage, &result);
-    if(result < p_image.at<unsigned char>(p_point.y,p_point.x))
+	int intensity = p_image.at<unsigned char>(p_point.y,p_point.x);
+	if(result < intensity)
     {
         return true;
     }
@@ -148,6 +149,7 @@ void TargetFinder::findCoarseBullsEyes(std::vector<std::vector<cv::Point>>& coar
         if(bigEnough && biggerCont )
         {
             // ## Debug for coarse bullsEyes on HighRes imgae
+			// Draws Rects around countours which are big enough to be considered
             if(DEBUG)
             {
                 std::vector<std::vector<cv::Point>> debugContours = std::vector<std::vector<cv::Point>>();
@@ -165,7 +167,9 @@ void TargetFinder::findCoarseBullsEyes(std::vector<std::vector<cv::Point>>& coar
             }
 
             // test if contour is a BullsEye
-            if(evaluateFirstCondition(downSampledImage,contours[i]) && evaluateSecondCondition(r))
+			bool firstCond = evaluateFirstCondition(downSampledImage,contours[i]);
+			bool secondCond = evaluateSecondCondition(r);
+            if( firstCond && secondCond )
             {
                 for(size_t j = 0; j < contours[i].size(); ++j)
                 {
@@ -180,6 +184,7 @@ void TargetFinder::findCoarseBullsEyes(std::vector<std::vector<cv::Point>>& coar
                 }
                 coarseBullsEyes.push_back(contours[i]);
 
+				// Draws rect around contours considered to be a bullsEye
                 if(DEBUG)
                 {
                     cv::Rect debugBounds = cv::boundingRect(contours[i]);
@@ -203,7 +208,7 @@ void TargetFinder::findCoarseBullsEyes(std::vector<std::vector<cv::Point>>& coar
 cv::Point TargetFinder::findRingPoint(cv::Point p_p1, cv::Point p_p2)
 {
     // ## parameter threshold to fit point to ring
-    const double alpha = 0.7;
+    const double alpha = 0.5;
     uchar vMin = 255;
     uchar vMax = 0;
     float vAvg = 0;
@@ -311,8 +316,9 @@ void TargetFinder::findOnAllRings(cv::Point p_point, cv::Point p_targetCenter,
             }
             if(DRAW_RINGPOINTS)
             {
-                cv::Scalar ringPointColor = cv::Scalar(0,255,0);
-                cv::line(p_debugImage,finalRingPoint, finalRingPoint,ringPointColor);
+                cv::Scalar ringPointColor = cv::Scalar(255,90,0);
+                //cv::line(p_debugImage,finalRingPoint, finalRingPoint,ringPointColor);
+				cv::circle(p_debugImage,finalRingPoint, 1,ringPointColor,-1);
             }
         }
         if(myImProc::isPointInImage(m_image,finalRingPoint))
@@ -698,7 +704,7 @@ void TargetFinder::drawTargets(cv::Mat& p_drawOn)
                 break;
             }*/
 
-            cv::ellipse(p_drawOn, ringEllipses[j],color,2);
+            cv::ellipse(p_drawOn, ringEllipses[j],color,1);
         }
 
         // Draw bulletHoles
