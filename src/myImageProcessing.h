@@ -9,7 +9,7 @@ namespace myImProc
     void show(const char* p_windowName,cv::Mat p_image, float p_size);
     void show(const char* p_windowName,cv::Mat p_image, cv::Size p_size);
     void processImage_Sobel(cv::Mat p_image, cv::Mat& p_out);
-//    void CannyThreshold(cv::Mat &p_image_gray);
+    void CannyThreshold(const cv::Mat &p_image_gray, cv::Mat& p_out, int p_lowThreshold, int p_highThreshold, int p_kernel_size);
     void previtt(const cv::Mat& p_image, cv::Mat& dst);
     bool isPointInImage(const cv::Mat& p_image, cv::Point p_point);
     cv::Vec3f calcCircle(cv::Point2f a, cv::Point2f b, cv::Point2f c);

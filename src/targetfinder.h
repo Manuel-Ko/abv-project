@@ -35,7 +35,7 @@ private:
 	static const bool DRAW_BULLSEYES = false;
     static const bool DRAW_BULLERHOLES = false;
     static const bool SHOW_HOLESEGMENTATION = false;
-    static const bool SHOW_COARSEDETECTION = false;
+    static const bool SHOW_COARSEDETECTION = true;
     static const cv::Size SHOW_WINDOWSIZE;
     float SHOW_SCALE;
 

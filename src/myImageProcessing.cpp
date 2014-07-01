@@ -55,19 +55,17 @@ namespace myImProc
         cv::addWeighted( abs_grad_x, 0.5, abs_grad_y, 0.5, 0, p_out );
     }
 
-//    void CannyThreshold(cv::Mat& p_image_gray)
-//    {
-//      /// Reduce noise with a kernel 3x3
-//      blur( p_image_gray, detected_edges, cv::Size(3,3) );
+    void CannyThreshold(const cv::Mat& p_image_gray, cv::Mat& p_out, int p_lowThreshold, int p_highThreshold, int p_kernel_size)
+    {
+      /// Reduce noise with a kernel 3x3
+      blur( p_image_gray, p_image_gray, cv::Size(3,3) );
 
-//      cv::Mat detected_edges;
+      /// Canny detector
+	  cv::Canny( p_image_gray, p_out, p_lowThreshold, p_highThreshold, p_kernel_size );
 
-//      /// Canny detector
-//      cv::Canny( detected_edges, detected_edges, lowThreshold, ratio, kernel_size );
-
-//      cv::cvtColor(detected_edges,detected_edges,CV_GRAY2BGR);
-//      cv::bitwise_not(detected_edges,tmp);
-//     }
+      //cv::cvtColor(detected_edges,detected_edges,CV_GRAY2BGR);
+     // cv::bitwise_not(detected_edges,tmp);
+     }
 
     void previtt(const cv::Mat& p_image, cv::Mat& dst)
     {

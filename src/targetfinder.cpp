@@ -101,7 +101,10 @@ void TargetFinder::findCoarseBullsEyes(std::vector<std::vector<cv::Point>>& coar
     cv::Mat prewitt;
     cv::Mat downSampledImage;
     cv::resize(m_image_gray,downSampledImage,cv::Size(0,0), downSampleFac, downSampleFac);
-    myImProc::previtt(downSampledImage, prewitt);
+    //myImProc::previtt(downSampledImage, prewitt);
+	/*myImProc::processImage_Sobel(downSampledImage, prewitt);
+	cv::threshold(prewitt,prewitt,100,255,CV_THRESH_TOZERO);*/
+	myImProc::CannyThreshold(downSampledImage,prewitt,100,50,3);
 
 	// ## Debug
 	cv::Mat previttDebug = prewitt.clone();
